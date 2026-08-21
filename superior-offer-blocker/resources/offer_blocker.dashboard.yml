@@ -1,0 +1,14 @@
+# =============================================================================
+# AI/BI dashboard as a DAB resource. `bundle deploy` publishes it from the
+# checked-in .lvdash.json. dataset_catalog/dataset_schema fill in the catalog +
+# schema for the bare table names used inside the dashboard queries (CLI >= 0.281).
+# =============================================================================
+resources:
+  dashboards:
+    offer_blocker_dashboard:
+      display_name: "Offer Blocker Analysis"
+      file_path: ../src/dashboards/offer_blocker.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}
+      dataset_schema: ${var.schema}
+      parent_path: /Workspace/Users/${workspace.current_user.userName}/dashboards

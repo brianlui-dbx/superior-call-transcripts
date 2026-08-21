@@ -1,0 +1,99 @@
+graph TB
+    subgraph INPUT["Input"]
+        JSON["Call Transcript<br/>JSON Files"]
+    end
+
+    subgraph UC_VOLUMES["Unity Catalog Volumes"]
+        LANDING["landing/transcripts/"]
+        SEEDS["seeds/<br/>(code_categories.csv,<br/>prompt_v6.txt)"]
+    end
+
+    subgraph SETUP["One-time Setup Job"]
+        SETUP_PY["setup.py<br/>(dims + prompt tables)"]
+        GENIE_PY["genie_setup.py<br/>(Genie space)"]
+    end
+
+    subgraph DIMS["Dimension Tables"]
+        DIM_SF["dim_salesforce_opportunity<br/>(synthetic CRM data)"]
+        DIM_CC["dim_code_categories<br/>(4A–4F blocker codes)"]
+        PROMPT_TBL["prompt_offer_blocker<br/>(LLM instruction rubric)"]
+    end
+
+    subgraph SDP["Spark Declarative Pipeline — Serverless"]
+        AUTOLOADER["Auto Loader<br/>(file tracking)"]
+        BRONZE["Bronze Tables"]
+        SILVER["Silver Tables"]
+        GOLD_CORE["Gold Tables — CORE"]
+        GOLD_ENH["Gold Tables — ENHANCEMENT"]
+    end
+
+    subgraph AI["Databricks AI Functions"]
+        AI_CLASSIFY["ai_classify"]
+        AI_EXTRACT["ai_extract"]
+        AI_QUERY["ai_query"]
+        AI_SENTIMENT["ai_analyze_sentiment"]
+        AI_SUMMARIZE["ai_summarize"]
+        AI_MASK["ai_mask"]
+    end
+
+    subgraph MODEL["Foundation Model Serving"]
+        ENDPOINT["databricks-claude-sonnet-4<br/>(configurable endpoint)"]
+    end
+
+    subgraph OUTPUTS["Outputs"]
+        DASHBOARD["AI/BI Lakeview<br/>Dashboard"]
+        GENIE["Genie Space<br/>(NL queries)"]
+        TRIGGER["File-Arrival Job<br/>(incremental trigger)"]
+    end
+
+    JSON -->|"dropped manually<br/>or via pipeline"| LANDING
+    LANDING --> AUTOLOADER
+    SEEDS --> SETUP_PY
+    SETUP_PY --> DIM_SF
+    SETUP_PY --> DIM_CC
+    SETUP_PY --> PROMPT_TBL
+    GENIE_PY --> GENIE
+
+    AUTOLOADER --> BRONZE
+    BRONZE --> SILVER
+    DIM_SF --> SILVER
+    SILVER --> AI_CLASSIFY
+    SILVER --> AI_EXTRACT
+    SILVER --> AI_SENTIMENT
+    SILVER --> AI_SUMMARIZE
+    SILVER --> AI_MASK
+    SILVER --> AI_QUERY
+    DIM_CC --> SILVER
+    PROMPT_TBL --> AI_QUERY
+
+    AI_CLASSIFY --> GOLD_CORE
+    AI_EXTRACT --> GOLD_CORE
+    AI_QUERY --> GOLD_CORE
+    GOLD_CORE --> GOLD_ENH
+
+    AI_SENTIMENT --> GOLD_ENH
+    AI_SUMMARIZE --> GOLD_ENH
+    AI_MASK --> GOLD_ENH
+
+    AI_CLASSIFY -.->|uses| ENDPOINT
+    AI_EXTRACT -.->|uses| ENDPOINT
+    AI_QUERY -.->|uses| ENDPOINT
+    AI_SENTIMENT -.->|uses| ENDPOINT
+    AI_SUMMARIZE -.->|uses| ENDPOINT
+    AI_MASK -.->|uses| ENDPOINT
+
+    GOLD_CORE --> DASHBOARD
+    GOLD_ENH --> DASHBOARD
+    GOLD_CORE --> GENIE
+    GOLD_ENH --> GENIE
+    LANDING -->|"new file triggers"| TRIGGER
+    TRIGGER -->|"runs pipeline"| SDP
+
+    style INPUT fill:#e8f4f8,stroke:#2196F3
+    style UC_VOLUMES fill:#fff3e0,stroke:#FF9800
+    style SETUP fill:#f3e5f5,stroke:#9C27B0
+    style DIMS fill:#fce4ec,stroke:#E91E63
+    style SDP fill:#e8f5e9,stroke:#4CAF50
+    style AI fill:#e3f2fd,stroke:#1565C0
+    style MODEL fill:#e3f2fd,stroke:#1565C0
+    style OUTPUTS fill:#fafafa,stroke:#9E9E9E

@@ -1,0 +1,77 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {"id": "10000000000000000000000000000001", "question": ["What are the most common offer blocker codes?"]},
+      {"id": "10000000000000000000000000000002", "question": ["How many opportunities have a hard blocker?"]},
+      {"id": "10000000000000000000000000000003", "question": ["Show the count of blockers by Salesforce stage and code"]},
+      {"id": "10000000000000000000000000000004", "question": ["Which opportunities had a rate (4A) blocker, and what was the evidence?"]},
+      {"id": "10000000000000000000000000000005", "question": ["What is the distribution of customer call tone?"]},
+      {"id": "10000000000000000000000000000006", "question": ["List opportunities where the customer sentiment was negative"]}
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {"identifier": "dbw_brlui_stable.call_transcripts_poc.dim_code_categories"},
+      {"identifier": "dbw_brlui_stable.call_transcripts_poc.gold_call_enrichment_enh"},
+      {"identifier": "dbw_brlui_stable.call_transcripts_poc.gold_followup_email_enh"},
+      {"identifier": "dbw_brlui_stable.call_transcripts_poc.gold_offer_blocker_findings"}
+    ]
+  },
+  "instructions": {
+    "example_question_sqls": [
+      {
+        "id": "20000000000000000000000000000001",
+        "question": ["How many opportunities have a hard blocker?"],
+        "sql": [
+          "SELECT count(DISTINCT `Opp ID`) AS opportunities_with_hard_blocker\n",
+          "FROM dbw_brlui_stable.call_transcripts_poc.gold_offer_blocker_findings\n",
+          "WHERE Disposition = 'hard_blocker'"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000002",
+        "question": ["Show the count of blockers by Salesforce stage and code"],
+        "sql": [
+          "SELECT `Salesforce Stage` AS stage, `Code Name` AS code_name, count(DISTINCT `Opp ID`) AS opportunities\n",
+          "FROM dbw_brlui_stable.call_transcripts_poc.gold_offer_blocker_findings\n",
+          "WHERE Code <> '—'\n",
+          "GROUP BY 1, 2 ORDER BY 1, 2"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000003",
+        "question": ["List opportunities where the customer sentiment was negative"],
+        "sql": [
+          "SELECT DISTINCT opportunity_id, call_topic, call_summary\n",
+          "FROM dbw_brlui_stable.call_transcripts_poc.gold_call_enrichment_enh\n",
+          "WHERE call_tone = 'negative'"
+        ]
+      }
+    ],
+    "text_instructions": [
+      {
+        "id": "30000000000000000000000000000001",
+        "content": [
+          "You are a sales-operations analyst assistant for Superior Plus Propane. You answer questions about why inside-sales opportunities did or did not accept an offer.\n\n",
+          "DOMAIN TERMS:\n",
+          "- 'Offer blocker' = a reason a customer did not accept an offer.\n",
+          "- 'Opportunity' = one sales deal, identified by the column `Opp ID` (a Salesforce Opportunity ID). An opportunity can span several calls.\n",
+          "- Blocker codes: 4A = Rate Uncompetitive, 4B = Ancillary Fees, 4C = Commercial Model, 4D = Contract Mechanics, 4E = Availability / Serviceability, 4F = Promotion Ineligibility. The catalog of codes and their definitions is in dim_code_categories (columns: code, description = the display 'Code Name', definition).\n",
+          "- 'Disposition' describes how much an issue affected the deal: hard_blocker (deal-killer), friction (slowed but survivable), mention_only (raised, no effect), resolved (concern corrected), latent (hypothesis), insufficient_evidence.\n",
+          "- Code = '—' (an em dash) means NO blocker was found for that opportunity.\n\n",
+          "TABLE GUIDE:\n",
+          "- gold_offer_blocker_findings is the MAIN table: one row per coded candidate issue. Its column names contain spaces, so ALWAYS backtick them: `Opp ID`, `Salesforce Stage`, `Code Name`. Other columns: Rate, Code, Primary, Qualifier, Disposition, Confidence, Evidence.\n",
+          "- gold_call_enrichment_enh has one row per call with call_tone (positive/negative/neutral/mixed), call_topic, extracted entities (customer_full_name, current_supplier, tank_size, service_city), call_summary, and call_summary_masked (PII redacted).\n",
+          "- gold_followup_email_enh has one drafted follow-up email per opportunity in the email_json column.\n",
+          "- dim_code_categories is the reference catalog for the six blocker codes.\n\n",
+          "ANSWER RULES:\n",
+          "- A 'real blocker' means Disposition IN ('hard_blocker','friction'). When counting blockers, EXCLUDE rows where Code = '—'.\n",
+          "- Count opportunities with COUNT(DISTINCT `Opp ID`), not COUNT(*), because an opportunity can have multiple finding rows.\n",
+          "- To join enrichment or emails to findings, join on opportunity_id = `Opp ID`.\n",
+          "- Be concise and cite the numbers."
+        ]
+      }
+    ]
+  }
+}

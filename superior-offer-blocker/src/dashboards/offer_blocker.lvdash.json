@@ -1,0 +1,281 @@
+{
+  "datasets": [
+    {
+      "name": "ds_findings",
+      "displayName": "Offer blocker findings",
+      "queryLines": [
+        "SELECT ",
+        "  `Opp ID` AS opp_id, ",
+        "  `Salesforce Stage` AS stage, ",
+        "  Rate AS rate, ",
+        "  Code AS code, ",
+        "  CASE WHEN Code = '—' THEN 'No blocker' ELSE `Code Name` END AS code_name, ",
+        "  `Primary` AS is_primary, ",
+        "  Qualifier AS qualifier, ",
+        "  Disposition AS disposition, ",
+        "  Confidence AS confidence, ",
+        "  Evidence AS evidence, ",
+        "  CASE WHEN Code <> '—' THEN 1 ELSE 0 END AS is_blocker, ",
+        "  CASE WHEN Disposition = 'hard_blocker' THEN 1 ELSE 0 END AS is_hard ",
+        "FROM gold_offer_blocker_findings ",
+        "ORDER BY is_blocker DESC, code"
+      ]
+    },
+    {
+      "name": "ds_enrichment",
+      "displayName": "Call enrichment (enhancement)",
+      "queryLines": [
+        "SELECT call_id, opportunity_id, stage_name AS stage, call_tone, call_topic, ",
+        "  service_city, tank_size, current_supplier ",
+        "FROM gold_call_enrichment_enh"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "overview",
+      "displayName": "Offer Blockers",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "title",
+            "multilineTextboxSpec": {"lines": ["## Offer Blocker Analysis — Superior Plus Propane"]}
+          },
+          "position": {"x": 0, "y": 0, "width": 12, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "subtitle",
+            "multilineTextboxSpec": {"lines": ["Why inside-sales opportunities stall or die — coded from call transcripts by Databricks AI Functions. CORE findings plus call-enrichment enhancements."]}
+          },
+          "position": {"x": 0, "y": 1, "width": 12, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "filter_stage",
+            "queries": [
+              {"name": "q_findings_stage", "query": {"datasetName": "ds_findings", "fields": [{"name": "stage", "expression": "`stage`"}], "disaggregated": false}},
+              {"name": "q_enrichment_stage", "query": {"datasetName": "ds_enrichment", "fields": [{"name": "stage", "expression": "`stage`"}], "disaggregated": false}}
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {"fieldName": "stage", "displayName": "Salesforce Stage", "queryName": "q_findings_stage"},
+                  {"fieldName": "stage", "displayName": "Salesforce Stage", "queryName": "q_enrichment_stage"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Salesforce Stage"}
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 12, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "kpi_opps",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_findings", "fields": [{"name": "countdistinct(opp_id)", "expression": "COUNT(DISTINCT `opp_id`)"}], "disaggregated": false}}],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {"value": {"fieldName": "countdistinct(opp_id)", "displayName": "Opportunities analyzed", "format": {"type": "number", "decimalPlaces": {"type": "exact", "places": 0}}}},
+              "frame": {"showTitle": true, "title": "Opportunities analyzed"}
+            }
+          },
+          "position": {"x": 0, "y": 3, "width": 3, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "kpi_findings",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_findings", "fields": [{"name": "count(opp_id)", "expression": "COUNT(`opp_id`)"}], "disaggregated": false}}],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {"value": {"fieldName": "count(opp_id)", "displayName": "Total findings", "format": {"type": "number", "decimalPlaces": {"type": "exact", "places": 0}}}},
+              "frame": {"showTitle": true, "title": "Total findings"}
+            }
+          },
+          "position": {"x": 3, "y": 3, "width": 3, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "kpi_blockers",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_findings", "fields": [{"name": "sum(is_blocker)", "expression": "SUM(`is_blocker`)"}], "disaggregated": false}}],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {"value": {"fieldName": "sum(is_blocker)", "displayName": "Coded blocker findings", "format": {"type": "number", "decimalPlaces": {"type": "exact", "places": 0}}}},
+              "frame": {"showTitle": true, "title": "Coded blocker findings"}
+            }
+          },
+          "position": {"x": 6, "y": 3, "width": 3, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "kpi_hard",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_findings", "fields": [{"name": "sum(is_hard)", "expression": "SUM(`is_hard`)"}], "disaggregated": false}}],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {"value": {"fieldName": "sum(is_hard)", "displayName": "Hard blockers (deal-killers)", "format": {"type": "number", "decimalPlaces": {"type": "exact", "places": 0}}}},
+              "frame": {"showTitle": true, "title": "Hard blockers (deal-killers)"}
+            }
+          },
+          "position": {"x": 9, "y": 3, "width": 3, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "hdr_blockers",
+            "multilineTextboxSpec": {"lines": ["### Blocker breakdown (CORE)"]}
+          },
+          "position": {"x": 0, "y": 6, "width": 12, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "bar_by_code",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_findings", "fields": [{"name": "code_name", "expression": "`code_name`"}, {"name": "count(opp_id)", "expression": "COUNT(`opp_id`)"}], "disaggregated": false}}],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {"fieldName": "count(opp_id)", "scale": {"type": "quantitative"}, "displayName": "Findings"},
+                "y": {"fieldName": "code_name", "scale": {"type": "categorical", "sort": {"by": "value"}}, "displayName": "Blocker code"}
+              },
+              "frame": {"showTitle": true, "title": "Findings by blocker code"}
+            }
+          },
+          "position": {"x": 0, "y": 7, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "pie_disposition",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_findings", "fields": [{"name": "disposition", "expression": "`disposition`"}, {"name": "count(opp_id)", "expression": "COUNT(`opp_id`)"}], "disaggregated": false}}],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {"fieldName": "count(opp_id)", "scale": {"type": "quantitative"}, "displayName": "Findings"},
+                "color": {"fieldName": "disposition", "scale": {"type": "categorical", "mappings": [
+                  {"value": "hard_blocker", "color": "#FF5F66"},
+                  {"value": "friction", "color": "#FFA600"},
+                  {"value": "mention_only", "color": "#4E5185"},
+                  {"value": "resolved", "color": "#99DDB4"},
+                  {"value": "latent", "color": "#995495"},
+                  {"value": "insufficient_evidence", "color": "#BC4C96"},
+                  {"value": "—", "color": "#C9CDD3"}
+                ]}, "displayName": "Disposition"},
+                "label": {"show": true}
+              },
+              "frame": {"showTitle": true, "title": "Disposition mix (how much it affected the deal)"}
+            }
+          },
+          "position": {"x": 6, "y": 7, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "hdr_enrichment",
+            "multilineTextboxSpec": {"lines": ["### Call enrichment (ENHANCEMENT — new AI-function capability)"]}
+          },
+          "position": {"x": 0, "y": 13, "width": 12, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "pie_tone",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_enrichment", "fields": [{"name": "call_tone", "expression": "`call_tone`"}, {"name": "count(call_id)", "expression": "COUNT(`call_id`)"}], "disaggregated": false}}],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {"fieldName": "count(call_id)", "scale": {"type": "quantitative"}, "displayName": "Calls"},
+                "color": {"fieldName": "call_tone", "scale": {"type": "categorical", "mappings": [
+                  {"value": "negative", "color": "#FF5F66"},
+                  {"value": "mixed", "color": "#FFA600"},
+                  {"value": "neutral", "color": "#4E5185"},
+                  {"value": "positive", "color": "#99DDB4"}
+                ]}, "displayName": "Call tone"},
+                "label": {"show": true}
+              },
+              "frame": {"showTitle": true, "title": "Customer call tone (ai_analyze_sentiment)"}
+            }
+          },
+          "position": {"x": 0, "y": 14, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "bar_topic",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_enrichment", "fields": [{"name": "call_topic", "expression": "`call_topic`"}, {"name": "count(call_id)", "expression": "COUNT(`call_id`)"}], "disaggregated": false}}],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {"fieldName": "count(call_id)", "scale": {"type": "quantitative"}, "displayName": "Calls"},
+                "y": {"fieldName": "call_topic", "scale": {"type": "categorical", "sort": {"by": "value"}}, "displayName": "Call topic"}
+              },
+              "frame": {"showTitle": true, "title": "Call topics (ai_classify)"}
+            }
+          },
+          "position": {"x": 6, "y": 14, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "hdr_detail",
+            "multilineTextboxSpec": {"lines": ["### Findings detail"]}
+          },
+          "position": {"x": 0, "y": 20, "width": 12, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "tbl_findings",
+            "queries": [{"name": "main_query", "query": {"datasetName": "ds_findings", "fields": [
+              {"name": "opp_id", "expression": "`opp_id`"},
+              {"name": "stage", "expression": "`stage`"},
+              {"name": "code", "expression": "`code`"},
+              {"name": "code_name", "expression": "`code_name`"},
+              {"name": "is_primary", "expression": "`is_primary`"},
+              {"name": "qualifier", "expression": "`qualifier`"},
+              {"name": "disposition", "expression": "`disposition`"},
+              {"name": "confidence", "expression": "`confidence`"},
+              {"name": "rate", "expression": "`rate`"},
+              {"name": "evidence", "expression": "`evidence`"}
+            ], "disaggregated": true}}],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {"columns": [
+                {"fieldName": "opp_id", "displayName": "Opp ID"},
+                {"fieldName": "stage", "displayName": "Stage"},
+                {"fieldName": "code", "displayName": "Code"},
+                {"fieldName": "code_name", "displayName": "Code Name"},
+                {"fieldName": "is_primary", "displayName": "Primary"},
+                {"fieldName": "qualifier", "displayName": "Qualifier"},
+                {"fieldName": "disposition", "displayName": "Disposition"},
+                {"fieldName": "confidence", "displayName": "Confidence"},
+                {"fieldName": "rate", "displayName": "Rate"},
+                {"fieldName": "evidence", "displayName": "Evidence"}
+              ]},
+              "frame": {"showTitle": true, "title": "All findings (one row per candidate issue)"}
+            }
+          },
+          "position": {"x": 0, "y": 21, "width": 12, "height": 8}
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {"light": "#FCFCFC", "dark": "#1F272D"},
+      "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#11171C"},
+      "fontColor": {"light": "#11171C", "dark": "#E8ECF0"},
+      "selectionColor": {"light": "#2272B4", "dark": "#8ACAFF"},
+      "visualizationColors": ["#FFA600", "#FF7054", "#DE5582", "#995495", "#4E5185", "#1D425C", "#99DDB4"],
+      "widgetHeaderAlignment": "LEFT"
+    },
+    "genieSpace": {
+      "isEnabled": true,
+      "overrideId": "01f19cba5b581c9a81e28d0502069ec6",
+      "enablementMode": "ENABLED"
+    }
+  }
+}
