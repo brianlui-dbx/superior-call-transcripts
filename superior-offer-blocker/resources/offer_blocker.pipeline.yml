@@ -3,7 +3,7 @@
 # Runs bronze -> silver -> gold entirely on serverless compute.
 # The `configuration` block below publishes each bundle variable as a pipeline
 # setting so the SQL files can read it with ${key} substitution
-# (e.g. ${model_endpoint}, ${region_1}).
+# (e.g. ${catalog}, ${region_1}).
 # =============================================================================
 resources:
   pipelines:
@@ -13,17 +13,16 @@ resources:
       catalog: ${var.catalog}   # where published tables land
       schema: ${var.schema}
       channel: CURRENT
-      # All SQL transformation files. One dataset per file (bronze/silver/gold).
+      # Root and transformation glob match the pipeline as edited in the workspace.
+      root_path: ../pipeline
       libraries:
         - glob:
-            include: ../src/pipeline/**
+            include: ../pipeline/transformations/**
       # These become spark confs readable as ${key} inside the SQL.
       configuration:
         catalog: ${var.catalog}
         schema: ${var.schema}
-        model_endpoint: ${var.model_endpoint}
         prompt_version: ${var.prompt_version}
-        batch_label: ${var.batch_label}
         region_1: ${var.region_1}
         region_2: ${var.region_2}
         input_multiline: ${var.input_multiline}

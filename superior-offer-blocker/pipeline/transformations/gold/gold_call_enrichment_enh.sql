@@ -10,12 +10,12 @@
 --   * ai_extract           -> CRM entities        : names, supplier, tank size, city, etc.
 --   * ai_summarize         -> call_summary        : a short agent-facing recap.
 --   * ai_mask              -> call_summary_masked : the summary with PII redacted (compliance).
+--   * ai_similarity        -> objection_proximity  : how closely client language matches canonical objection phrasing.
+--   * ai_fix_grammar       -> client_text_polished : raw spoken words cleaned into readable written prose.
 --
--- NOTE ON ORDERING: we mask the SUMMARY (not the raw transcript) — cheaper and it
---   mirrors the reference solution. One row per call; blank voicemail calls are skipped.
+-- NOTE ON ORDERING: we mask the SUMMARY (not the raw transcript)
 
 CREATE OR REFRESH MATERIALIZED VIEW gold_call_enrichment_enh
-COMMENT 'ENHANCEMENT: per-call sentiment, topic, entities, summary, and PII-masked summary.'
 AS
 WITH calls AS (
   SELECT
@@ -65,7 +65,16 @@ enriched AS (
       map('version', '2.1')
     ):response AS entities,
     -- [ENHANCEMENT] ai_summarize: a <=40-word recap to help an agent prioritize.
-    ai_summarize(call_text, 40) AS call_summary
+    ai_summarize(call_text, 40) AS call_summary,
+    -- [ENHANCEMENT] ai_similarity: how closely does the customer's language resemble
+    -- a canonical price/service objection? Higher = more textbook blocker language.
+    ai_similarity(
+      client_text,
+      'Your price is too high and I can get a better rate from another supplier so I want to cancel'
+    ) AS objection_proximity,
+    -- [ENHANCEMENT] ai_fix_grammar: polish the raw spoken call text into clean,
+    -- readable written prose (fixes speech-to-text artifacts, run-ons, filler).
+    ai_fix_grammar(call_text) AS call_text_polished
   FROM calls
   WHERE length(trim(call_text)) > 0   -- skip blank voicemail/hangup segments (save cost)
 )
@@ -76,8 +85,6 @@ SELECT
   recordingStartTime,
   call_tone,
   call_topic,
-  -- Flatten the extracted entities (VARIANT) into plain columns. ai_extract v2.1
-  -- wraps each field as {"value": ...}, so read :value (SQL NULL when not found).
   entities:customer_full_name:value::STRING          AS customer_full_name,
   entities:current_supplier:value::STRING            AS current_supplier,
   entities:competitor_or_quoted_rate:value::STRING   AS competitor_or_quoted_rate,
@@ -86,5 +93,9 @@ SELECT
   entities:promotion_mentioned:value::STRING         AS promotion_mentioned,
   call_summary,
   -- [ENHANCEMENT] ai_mask: redact person/address/phone/email for compliant sharing.
-  ai_mask(call_summary, array('person', 'address', 'phone', 'email')) AS call_summary_masked
+  ai_mask(call_summary, array('person', 'address', 'phone', 'email')) AS call_summary_masked,
+  -- [ENHANCEMENT] ai_similarity: proximity to canonical objection (0.0–1.0 scale).
+  round(objection_proximity, 4) AS objection_proximity,
+  -- [ENHANCEMENT] ai_fix_grammar: spoken words polished into written form.
+  call_text_polished
 FROM enriched;

@@ -7,18 +7,17 @@
 --   downstream app can render or send it. One row per opportunity.
 
 CREATE OR REFRESH MATERIALIZED VIEW gold_followup_email_enh
-COMMENT 'ENHANCEMENT: a strict-JSON follow-up email per opportunity, steered by the coded offer blockers.'
 AS
 WITH blockers AS (
   -- Roll each opportunity's real findings into one steering line for the email.
   SELECT
-    `Opp ID` AS opportunity_id,
+    opportunity_id,
     concat_ws('; ',
-      collect_list(concat(Code, '/', Qualifier, ' [', Disposition, ']: ', Evidence))
+      collect_list(concat(code, '/', qualifier, ' [', disposition, ']: ', disposition_evidence))
     ) AS blocker_context
-  FROM gold_offer_blocker_findings
-  WHERE Code <> '—'
-  GROUP BY `Opp ID`
+  FROM gold_offer_blockers
+  WHERE code <> '—'
+  GROUP BY opportunity_id
 ),
 drafted AS (
   -- One ai_query call per opportunity. failOnError => false so a bad row can't fail
@@ -27,7 +26,7 @@ drafted AS (
     d.opportunity_id,
     d.stage_name,
     ai_query(
-      '${model_endpoint}',   -- same parameterized endpoint the CORE analysis uses
+      'databricks-claude-opus-4-8',
       concat(
         'You are a Superior Plus Propane inside-sales agent. Using the call transcript and the ',
         'identified offer blocker(s), draft a professional, friendly follow-up email to the customer ',
@@ -37,9 +36,9 @@ drafted AS (
       ),
       responseFormat => '{"type":"json_schema","json_schema":{"name":"followup_email","strict":true,"schema":{"type":"object","additionalProperties":false,"required":["subject","greeting","call_summary","blocker_acknowledgement","recommended_next_step","contact_information","closing"],"properties":{"subject":{"type":"string"},"greeting":{"type":"string"},"call_summary":{"type":"string"},"blocker_acknowledgement":{"type":"string"},"recommended_next_step":{"type":"string"},"contact_information":{"type":"string"},"closing":{"type":"string"}}}}}',
       failOnError => false,
-      modelParameters => named_struct('temperature', CAST(0.2 AS DOUBLE), 'max_tokens', 1200)
+      modelParameters => named_struct('max_tokens', 1200)
     ) AS resp
-  FROM silver_opportunity_dialogue d
+  FROM gold_opportunity_enrichment d
   LEFT JOIN blockers b USING (opportunity_id)
 )
 SELECT

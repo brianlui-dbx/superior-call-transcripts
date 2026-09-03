@@ -1,70 +1,65 @@
 flowchart TD
-    subgraph INGEST["Ingest"]
-        FILES["JSON files\n(landing Volume)"]
-        BT_I["bronze_transcripts_ingest\n(raw, append-only)"]
-        BT["bronze_transcripts\n(deduped by id via AUTO CDC)"]
+    subgraph INGEST["Bronze · incremental ingestion"]
+        FILES["Transcript JSON<br/>landing Volume"]
+        RAW["bronze_transcripts_ingest<br/>streaming table"]
+        BRONZE["bronze_transcripts<br/>deduplicated streaming table"]
+        FILES -->|"Auto Loader"| RAW
+        RAW -->|"AUTO CDC · SCD Type 1 on id"| BRONZE
     end
 
-    subgraph SILVER_LAYER["Silver — Joins, Windowing, Dialogue Assembly"]
-        SF["dim_salesforce_opportunity\n(phone → opp_id, stage, region)"]
-        TSF["silver_transcript_sf_joined\nphone normalise · Seg X of N\nregion filter · combined_key"]
-        OD["silver_opportunity_dialogue\none prompt-ready text per opp"]
-        IS["silver_issue_signals\nai_classify → candidate codes 4A–4F\nai_extract → quoted_rate"]
+    subgraph SILVER["Silver · joined and prompt-ready"]
+        SF["dim_salesforce_opportunity<br/>phone → opportunity · stage · region"]
+        JOINED["silver_transcript_sf_joined<br/>normalize phone · join CRM<br/>filter region · number segments"]
+        DIALOGUE["silver_opportunity_dialogue<br/>one ordered dialogue per opportunity"]
+        SF --> JOINED
+        JOINED --> DIALOGUE
     end
 
-    subgraph GOLD_CORE["Gold — CORE (mirrors manual workflow)"]
-        GFR["gold_findings_raw\nai_query per opp → raw JSON"]
-        GF["gold_offer_blocker_findings\n★ THE DELIVERABLE ★\nVersion · Batch · Opp ID · Stage\nRate · Code · Code Name\nPrimary · Qualifier · Disposition\nConfidence · Evidence"]
-        GBI["gold_batch_inventory\nvalidation: N segments / M opps"]
-        GPC["gold_primary_check\n1 Primary=Yes per blocker opp"]
-        GQ["gold_findings_quarantine\nsuspect rows (normally empty)"]
+    subgraph BLOCKERS["Gold · offer-blocker analysis"]
+        OPPS["gold_opportunity_enrichment<br/>ai_classify candidate codes<br/>ai_extract quoted + competitor rates"]
+        QUAL["lookup_qualifier_config"]
+        FINDINGS["gold_offer_blockers<br/>ai_classify disposition<br/>ai_classify qualifier<br/>confidence + evidence"]
+        SUMMARY["gold_offer_blocker_summary<br/>final analyst-facing output"]
+        OPPS --> FINDINGS
+        QUAL --> FINDINGS
+        FINDINGS --> SUMMARY
     end
 
-    subgraph GOLD_ENH["Gold — ENHANCEMENT (net-new AI)"]
-        GCE["gold_call_enrichment_enh\nai_analyze_sentiment → call_tone\nai_classify → call_topic\nai_extract → CRM entities\nai_summarize → call_summary\nai_mask → PII-masked summary"]
-        GFE["gold_followup_email_enh\nai_query → blocker-aware\nfollow-up email (strict JSON)"]
+    subgraph ENH["Gold · coaching enhancements"]
+        CALLS["gold_call_enrichment_enh<br/>tone · topic · entities · summary<br/>PII masking · similarity · grammar"]
+        EMAIL["gold_followup_email_enh<br/>blocker-aware email JSON"]
     end
 
-    subgraph DOWNSTREAM["Downstream Surfaces"]
-        DASH["AI/BI Dashboard\nKPIs · code breakdown · tone/topic\nfindings table · Ask Genie button"]
-        GENIE["Genie Space\nNL queries over gold tables"]
+    subgraph EXPERIENCE["Consumption"]
+        DASH["Sales Call Coaching —<br/>Offer Blocker Intelligence<br/>4 dashboard pages"]
+        GENIE["Offer Blocker Analytics<br/>curated Genie agent"]
+        EXPLORE["ai_top_drivers exploration<br/>contribution analysis"]
     end
 
-    FILES -->|"Auto Loader\nfile tracking"| BT_I
-    BT_I -->|"FLOW AUTO CDC\nSCD TYPE 1 on id"| BT
-    BT --> TSF
-    SF -->|"INNER JOIN on phone10"| TSF
-    TSF --> OD
-    TSF --> GCE
-    OD --> IS
-    OD --> GFR
-    IS -->|"hints + cross-check"| GFR
-    GFR -->|"parse JSON · explode · validate"| GF
-    GF --> GBI
-    GF --> GPC
-    GF --> GQ
-    GF --> GFE
-    OD --> GFE
-    GF --> DASH
-    GCE --> DASH
-    GFE --> DASH
-    GF --> GENIE
-    GCE --> GENIE
-    GFE --> GENIE
+    BRONZE --> JOINED
+    DIALOGUE --> OPPS
+    JOINED --> CALLS
+    OPPS --> EMAIL
+    FINDINGS --> EMAIL
 
-    style FILES fill:#fff8e1,stroke:#F9A825
-    style BT_I fill:#fff8e1,stroke:#F9A825
-    style BT fill:#fff8e1,stroke:#F9A825
-    style TSF fill:#e8f5e9,stroke:#388E3C
-    style OD fill:#e8f5e9,stroke:#388E3C
-    style IS fill:#e8f5e9,stroke:#388E3C
-    style SF fill:#fce4ec,stroke:#C62828
-    style GFR fill:#e3f2fd,stroke:#1565C0
-    style GF fill:#1565C0,color:#fff,stroke:#0D47A1
-    style GBI fill:#e3f2fd,stroke:#1565C0
-    style GPC fill:#e3f2fd,stroke:#1565C0
-    style GQ fill:#ffebee,stroke:#C62828
-    style GCE fill:#f3e5f5,stroke:#6A1B9A
-    style GFE fill:#f3e5f5,stroke:#6A1B9A
-    style DASH fill:#fafafa,stroke:#757575
-    style GENIE fill:#fafafa,stroke:#757575
+    SUMMARY --> DASH
+    CALLS --> DASH
+    SUMMARY --> GENIE
+    CALLS --> GENIE
+    EMAIL --> GENIE
+    SUMMARY -.-> EXPLORE
+    DASH -. "Ask Genie" .-> GENIE
+
+    classDef bronze fill:#FFF4E5,stroke:#D66B10,color:#242424
+    classDef silver fill:#E7F1FA,stroke:#2272B4,color:#242424
+    classDef reference fill:#F5EAF7,stroke:#8E44AD,color:#242424
+    classDef gold fill:#FFF2C7,stroke:#B38B00,color:#242424
+    classDef enhance fill:#E8F5EE,stroke:#268A57,color:#242424
+    classDef consume fill:#EEF0F4,stroke:#59636E,color:#242424
+
+    class FILES,RAW,BRONZE bronze
+    class JOINED,DIALOGUE silver
+    class SF,QUAL reference
+    class OPPS,FINDINGS,SUMMARY gold
+    class CALLS,EMAIL enhance
+    class DASH,GENIE,EXPLORE consume

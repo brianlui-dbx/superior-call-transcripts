@@ -1,320 +1,197 @@
-# Superior Plus Propane — Offer Blocker Analysis
+# Superior Plus Propane — Offer Blocker Intelligence
 
-Automated Databricks pipeline that reads sales call transcripts and produces a
-coded table of **offer blockers**: the specific reasons a customer declined a
-propane service offer.
+This repository turns Superior Plus Propane sales-call transcripts into structured offer-blocker intelligence on Databricks. It replaces a manual transcript-to-LLM workflow with a serverless Spark Declarative Pipeline, curated Genie agent, and multi-page AI/BI coaching dashboard.
 
-Replaces a manual "paste transcripts into a ChatGPT session" workflow with an
-incremental, re-runnable pipeline built on **Auto Loader**, **Spark Declarative
-Pipelines (SDP)**, and **Databricks AI Functions**, running entirely on serverless
-compute.
+The deployable project is [`superior-offer-blocker/`](superior-offer-blocker/).
 
----
+## What it does
 
-## Background for engineers
+The solution:
 
-A propane sales rep calls a prospect. If the customer doesn't sign up, there's a
-reason: the rate was too high, a fee was unacceptable, the contract terms didn't
-fit, etc. These are "offer blockers." The original process was: paste call
-transcripts into a ChatGPT session, get a table back, copy it into a spreadsheet.
-This pipeline automates that process end-to-end.
+1. Incrementally ingests transcript JSON with Auto Loader.
+2. Deduplicates calls by ID using AUTO CDC.
+3. Joins calls to synthetic Salesforce opportunities and assembles one dialogue per opportunity.
+4. Uses Databricks AI Functions to classify blocker codes, extract quoted rates, assign dispositions and qualifiers, and enrich each call.
+5. Publishes an analyst-friendly blocker summary, coaching signals, and generated follow-up emails.
+6. Exposes the results through a curated Genie agent and AI/BI dashboard.
 
-**Blocker taxonomy (6 codes):**
+### Blocker taxonomy
 
-| Code | Name | What it covers |
-|------|------|----------------|
-| 4A | Rate Uncompetitive | Per-unit price is too high vs. competitor or threshold |
-| 4B | Ancillary Fees | Delivery, tank rental, inspection, or admin fees break the deal |
-| 4C | Commercial Model | Customer needs pre-buy, fixed vs. variable pricing, or different commitment length |
-| 4D | Contract Mechanics | Auto-renewal, cancellation terms, or billing terms are the barrier |
-| 4E | Availability / Serviceability | Superior structurally cannot provide the product or coverage |
-| 4F | Promotion Ineligibility | Customer wanted a discount/referral credit that couldn't be applied |
+| Code | Category | Examples |
+|---|---|---|
+| 4A | Rate competitiveness | High quoted rate, competitor comparison, price-match request |
+| 4B | Ancillary fees | Delivery, rental, installation, inspection, or admin fees |
+| 4C | Commercial model | Pre-buy, tank ownership, pricing mechanism, commitment length |
+| 4D | Contract mechanics | Auto-renewal, exit terms, billing, or transaction process |
+| 4E | Availability/serviceability | Coverage, product, equipment, site, or timeline gap |
+| 4F | Promotion eligibility | Referral, threshold, ownership, timing, or policy restrictions |
 
----
-
-## Two tiers of functionality
-
-Every object in the pipeline is labelled with a tier:
-
-| Tier | Marker | Meaning |
-|------|--------|---------|
-| **CORE** | no suffix | Faithfully reproduces the original hand-written Python scripts (`original/*.py`) |
-| **ENHANCEMENT** | suffix `_enh` | Net-new AI capability that did not exist in the original workflow |
-
----
-
-## Architecture
+## Current architecture
 
 ![System Architecture](docs/architecture.png)
 
-**Key components:**
+```text
+Transcript JSON
+    │
+    ▼
+bronze_transcripts_ingest ──AUTO CDC──▶ bronze_transcripts
+                                                │
+dim_salesforce_opportunity ─────────────────────┤
+                                                ▼
+                               silver_transcript_sf_joined
+                                                │
+                                                ▼
+                               silver_opportunity_dialogue
+                                                │
+                                                ▼
+                               gold_opportunity_enrichment
+                                  │  ai_classify: codes 4A–4F
+                                  │  ai_extract: quoted/competitor rates
+                                  ▼
+                                  gold_offer_blockers
+                                  │  ai_classify: disposition
+lookup_qualifier_config ──────────┤  ai_classify: qualifier
+                                  ▼
+                           gold_offer_blocker_summary
 
-- **Unity Catalog Volumes** — governed file storage. `landing/transcripts/` is the Auto Loader source; `seeds/` holds reference CSVs.
-- **Dimension tables** — `dim_salesforce_opportunity` (synthetic CRM data linking phone numbers to deal IDs and regions), `dim_code_categories` (the 4A–4F taxonomy), `prompt_offer_blocker` (the full LLM instruction rubric as a Delta table row).
-- **Spark Declarative Pipeline (SDP)** — defines bronze/silver/gold datasets as SQL files; runs on serverless compute with no cluster to manage.
-- **Databricks AI Functions** — six built-in SQL functions (`ai_query`, `ai_classify`, `ai_extract`, `ai_analyze_sentiment`, `ai_summarize`, `ai_mask`) call the foundation model endpoint from inside SQL without any Python orchestration.
-- **Foundation Model Serving** — a Databricks-hosted endpoint (default: `databricks-claude-sonnet-4`). Swappable via the `model_endpoint` variable, no code change required.
-- **AI/BI Dashboard** — Lakeview dashboard deployed as a native DAB resource, showing KPIs, blocker-code breakdowns, per-call tone/topic (enhancement), a findings table, and an Ask Genie button.
-- **Genie Space** — natural-language query layer curated over the gold tables, provisioned by the setup job.
-- **File-Arrival Job** — fires the pipeline automatically whenever a new transcript file is dropped into the landing Volume.
-
----
-
-## Data flow
-
-```
-landing/*.json ──Auto Loader──▶ bronze_transcripts_ingest ──AUTO CDC (dedup on id)──▶ bronze_transcripts
-                                                                                          │
-dim_salesforce_opportunity (synthetic) ───────────────────────────────────────────────┐  │
-                                                                                        ▼  ▼
-                                        silver_transcript_sf_joined  (phone-join, Seg X of N, region filter)
-                                                        │
-                                                        ▼
-                                        silver_opportunity_dialogue  (one dialogue string per opportunity)
-                                          │                         │
-   dim_code_categories (labels) ──▶ silver_issue_signals            │   [CORE: ai_classify code, ai_extract rate]
-                                          │                         │
-   prompt_offer_blocker (prompt) ──▶ gold_findings_raw  (ai_query, hinted by the signals)
-                                          │
-                                          ▼
-                       gold_offer_blocker_findings   ◀── THE deliverable ("AI Output" sheet)
-                          ├─ gold_batch_inventory     (validation: "Detected N segments across M opportunities")
-                          ├─ gold_primary_check       (validation: one Primary=Yes per blocker opp)
-                          └─ gold_findings_quarantine (validation: suspect rows; normally empty)
-
-── ENHANCEMENT (suffix _enh) ─────────────────────────────────────────────────────────────────
-   silver_transcript_sf_joined ──▶ gold_call_enrichment_enh   (per call: sentiment · topic · NER · summary · PII-masked summary)
-   silver_opportunity_dialogue + findings ──▶ gold_followup_email_enh   (per opportunity: blocker-aware follow-up email in JSON)
+Enhancements:
+  silver_transcript_sf_joined ──▶ gold_call_enrichment_enh
+  gold_opportunity_enrichment ──▶ gold_followup_email_enh
 ```
 
-![Data Flow](docs/data_flow.png)
+![Detailed Data Flow](docs/data_flow.png)
 
-### Bronze — ingest and deduplicate
+### Pipeline datasets
 
-| Table | Type | What it does |
-|-------|------|--------------|
-| `bronze_transcripts_ingest` | Streaming Table | Auto Loader reads new JSON files from the landing Volume; appends raw records |
-| `bronze_transcripts` | Streaming Table | AUTO CDC deduplicates on `id` (SCD Type 1); exactly one row per call |
+| Dataset | Type | Purpose |
+|---|---|---|
+| `bronze_transcripts_ingest` | Streaming table | Incrementally reads transcript JSON and records source metadata |
+| `bronze_transcripts` | Streaming table | SCD Type 1 deduplication by call ID |
+| `silver_transcript_sf_joined` | Materialized view | Normalizes phones, joins Salesforce opportunities, applies region filters, and numbers call segments |
+| `silver_opportunity_dialogue` | Materialized view | Produces one ordered, prompt-ready dialogue per opportunity |
+| `gold_opportunity_enrichment` | Materialized view | Classifies candidate blocker codes and extracts structured quoted/competitor rates |
+| `gold_offer_blockers` | Materialized view | Classifies disposition and code-specific qualifier, with confidence and evidence |
+| `gold_offer_blocker_summary` | Materialized view | Final spreadsheet-style blocker output used by the dashboard and Genie |
+| `gold_call_enrichment_enh` | Materialized view | Adds tone, topic, CRM entities, summary, masking, similarity, and grammar signals per call |
+| `gold_followup_email_enh` | Materialized view | Generates a concise blocker-aware follow-up email per opportunity |
 
-Auto Loader tracks which files it has already processed, so re-runs never re-ingest the same file.
+### AI Functions
 
-### Silver — joins, windowing, and dialogue assembly
+The current implementation uses:
 
-| Table | Type | What it does |
-|-------|------|--------------|
-| `silver_transcript_sf_joined` | Materialized View | Normalizes phone numbers to 10 digits; inner-joins to `dim_salesforce_opportunity` to attach `opportunity_id`, stage, and region; numbers each call as "Seg X of N"; filters to the configured regions |
-| `silver_opportunity_dialogue` | Materialized View | Collapses all calls for one opportunity into a single prompt-ready transcript string (one row per opportunity) |
-| `silver_issue_signals` | Materialized View | Runs `ai_classify` (multi-label, codes 4A–4F) and `ai_extract` (quoted rate) once per opportunity to produce lightweight hints |
+- `ai_classify` for blocker codes, dispositions, qualifiers, and call topics.
+- `ai_extract` for quoted rates, competitor rates, and CRM-style entities.
+- `ai_analyze_sentiment` for customer tone.
+- `ai_summarize` and `ai_mask` for concise, PII-safe call summaries.
+- `ai_similarity` and `ai_fix_grammar` for coaching-oriented enrichment.
+- `ai_query` with `databricks-claude-opus-4-8` for structured follow-up emails.
+- `ai_top_drivers` in the exploratory notebook for contribution analysis.
 
-### Gold — CORE (mirrors the original spreadsheet)
+## Analytics experiences
 
-| Table | Type | What it does |
-|-------|------|--------------|
-| `gold_findings_raw` | Materialized View | Calls `ai_query` once per opportunity with the full instruction prompt + signals; returns a raw JSON findings array |
-| `gold_offer_blocker_findings` | Materialized View | **THE DELIVERABLE.** Parses and explodes the JSON into one row per finding; columns mirror the original "AI Output" sheet (Version, Batch, Opp ID, Salesforce Stage, Rate, Code, Code Name, Primary, Qualifier, Disposition, Confidence, Evidence) |
-| `gold_batch_inventory` | Materialized View | Validation: confirms the expected count of segments and opportunities |
-| `gold_primary_check` | Materialized View | Validation: one Primary=Yes per opportunity that has a blocker |
-| `gold_findings_quarantine` | Materialized View | Rows that failed data-quality expectations (normally empty) |
+### Genie agent
 
-### Gold — ENHANCEMENT (net-new AI)
+- Name: **Offer Blocker Analytics**
+- Workspace ID: `01f19cba5b581c9a81e28d0502069ec6`
+- Version-controlled definition: [`superior-offer-blocker/genie/genie_agent.json`](superior-offer-blocker/genie/genie_agent.json)
+- Coverage: six curated tables, six sample questions, 17 example SQL questions, consolidated instructions, and a benchmark.
 
-| Table | Type | What it does |
-|-------|------|--------------|
-| `gold_call_enrichment_enh` | Materialized View | Per-call: `ai_analyze_sentiment` → call tone; `ai_classify` → call topic; `ai_extract` → CRM entities (name, supplier, tank size, city, promotions); `ai_summarize` → 40-word summary; `ai_mask` → PII-redacted summary |
-| `gold_followup_email_enh` | Materialized View | Per-opportunity: `ai_query` drafts a blocker-aware follow-up email in strict JSON (subject, greeting, call summary, blocker acknowledgement, next step, closing) |
+The setup job provisions or updates the agent from the checked-in JSON.
 
-### How the AI Functions are used
+### AI/BI dashboard
 
-| Function | CORE use | ENHANCEMENT use |
-|----------|----------|-----------------|
-| `ai_classify` | Candidate blocker codes 4A–4F (`silver_issue_signals`) | Call topic routing (`gold_call_enrichment_enh`) |
-| `ai_extract` | Quoted rate NER (`silver_issue_signals`) | CRM entities: name, supplier, tank size, city (`gold_call_enrichment_enh`) |
-| `ai_query` | Compound offer-blocker findings (`gold_findings_raw`) | Blocker-aware follow-up email (`gold_followup_email_enh`) |
-| `ai_analyze_sentiment` | — | Customer call tone (`gold_call_enrichment_enh`) |
-| `ai_summarize` | — | Agent-facing call summary (`gold_call_enrichment_enh`) |
-| `ai_mask` | — | PII redaction of the summary (`gold_call_enrichment_enh`) |
+- Name: **Sales Call Coaching — Offer Blocker Intelligence**
+- Source workspace ID: `01f1a70334b0114384592a2536bbe4f2`
+- Version-controlled definition: [`superior-offer-blocker/src/dashboards/offer_blocker.lvdash.json`](superior-offer-blocker/src/dashboards/offer_blocker.lvdash.json)
+- Pages: Executive Overview, Call Intelligence & Coaching, Global Filters, and AI Insights.
+- Datasets: blocker findings, call enrichment, and competitive intelligence.
+- The dashboard links to the curated Genie agent above.
 
----
+The dashboard was created manually and then imported into the bundle source. Before a future deployment to the existing development target, explicitly bind the DAB resource key `offer_blocker_dashboard` to the dashboard ID above. Otherwise, the existing bundle state may still target the older dashboard.
 
-## Project layout
+## Repository layout
 
+```text
+.
+├── README.md
+├── docs/                              Architecture and data-flow diagrams
+├── examples/                          Sanitized inputs and reference outputs
+├── original/                          Original hand-written Python workflow
+└── superior-offer-blocker/
+    ├── databricks.yml                 Bundle variables and development target
+    ├── README.md                      Bundle-level overview
+    ├── resources/
+    │   ├── offer_blocker.pipeline.yml Serverless SDP definition
+    │   ├── offer_blocker.job.yml      File-arrival pipeline job
+    │   ├── setup.job.yml              Setup and Genie provisioning job
+    │   └── offer_blocker.dashboard.yml
+    ├── pipeline/
+    │   ├── transformations/
+    │   │   ├── bronze/
+    │   │   ├── silver/
+    │   │   └── gold/
+    │   └── explorations/
+    │       └── ai_top_drivers_exploration.py
+    ├── src/
+    │   ├── setup/
+    │   │   ├── setup.py
+    │   │   └── genie_setup.py
+    │   └── dashboards/
+    │       └── offer_blocker.lvdash.json
+    ├── genie/
+    │   └── genie_agent.json
+    ├── data/
+    │   └── batch_b_ny_001.json
+    └── seeds/
+        ├── code_categories.csv
+        └── offer_blocker_prompt_v6.txt
 ```
-superior-offer-blocker/
-├── databricks.yml                  Bundle manifest + all variables
-├── resources/
-│   ├── offer_blocker.pipeline.yml  SDP pipeline (serverless, all SQL files)
-│   ├── setup.job.yml               One-time setup job
-│   ├── offer_blocker.job.yml       Ingest job with file-arrival trigger
-│   └── offer_blocker.dashboard.yml AI/BI dashboard (native DAB resource)
-├── src/
-│   ├── pipeline/                   One SQL file per dataset (bronze/silver/gold)
-│   │   ├── bronze_transcripts.sql
-│   │   ├── silver_transcript_sf_joined.sql
-│   │   ├── silver_opportunity_dialogue.sql
-│   │   ├── silver_issue_signals.sql
-│   │   ├── gold_findings_raw.sql
-│   │   ├── gold_offer_blocker_findings.sql
-│   │   ├── gold_batch_inventory.sql
-│   │   ├── gold_primary_check.sql
-│   │   ├── gold_findings_quarantine.sql
-│   │   ├── gold_call_enrichment_enh.sql
-│   │   └── gold_followup_email_enh.sql
-│   ├── setup/
-│   │   ├── setup.py                Creates volumes, dims, prompt table, copies sample
-│   │   └── genie_setup.py          Idempotently provisions the Genie space
-│   └── dashboards/
-│       └── offer_blocker.lvdash.json  Serialized AI/BI dashboard
-├── seeds/
-│   ├── code_categories.csv         4A–4F blocker-code catalog
-│   └── offer_blocker_prompt_v6.txt Full LLM instruction rubric (v6)
-├── genie/
-│   └── genie_agent.json            Genie space definition
-└── data/
-    └── batch_b_ny_001.json         Sample batch (19 calls) for the demo
-```
 
----
+## Setup objects
 
-## Deployment — new environment
+The `setup_job` creates or refreshes:
 
-### Prerequisites
+- The Unity Catalog `landing` volume and `landing/transcripts` directory.
+- The bundled sample transcript in the landing directory.
+- `dim_salesforce_opportunity`, a deterministic synthetic CRM mapping for the demo.
+- `lookup_qualifier_config`, which contains code-specific labels and instructions for qualifier classification.
+- The **Offer Blocker Analytics** Genie agent from the checked-in definition.
 
-| Requirement | Notes |
-|-------------|-------|
-| Databricks workspace | Unity Catalog enabled |
-| Databricks CLI ≥ 1.0 | `databricks --version` |
-| Unity Catalog catalog + schema | Must exist or be creatable by the deploying principal |
-| Foundation model serving endpoint | Must support **batch inference** (e.g. `databricks-claude-sonnet-4`). Check with `databricks serving-endpoints list --profile <PROFILE>` |
-| SQL warehouse | For the AI/BI dashboard and Genie space |
+## Bundle configuration
 
-### Step 1 — Configure your profile
+The default development configuration uses:
+
+| Variable | Default |
+|---|---|
+| `catalog` | `dbw_brlui_stable` |
+| `schema` | `call_transcripts_poc` |
+| `warehouse_id` | `50ad3a9993503e5b` |
+| `prompt_version` | `v6` |
+| `region_1` / `region_2` | `New York` / `New Jersey` |
+| `input_multiline` | `true` |
+
+The bundle still declares `model_endpoint` and `batch_label` for compatibility, but the current live pipeline does not pass those values into its configuration. The follow-up-email model is currently specified directly in SQL.
+
+## Validate and run
+
+Choose the Databricks CLI profile explicitly; never rely on implicit profile selection.
 
 ```bash
-# Authenticate (OAuth is recommended)
-databricks auth login --host https://<your-workspace>.azuredatabricks.net --profile my-profile
-```
-
-### Step 2 — Review and override variables
-
-All environment-specific values live in `databricks.yml` under `variables:`. Override any of them at deploy time with `--var key=value`.
-
-| Variable | Default | What to change |
-|----------|---------|----------------|
-| `catalog` | `dbw_brlui_stable` | Your target Unity Catalog catalog |
-| `schema` | `call_transcripts_poc` | Schema inside that catalog |
-| `model_endpoint` | `databricks-claude-sonnet-4` | Any batch-inference-capable endpoint |
-| `warehouse_id` | `50ad3a9993503e5b` | Your SQL warehouse ID |
-| `region_1` / `region_2` | `New York` / `New Jersey` | Sales regions to include (others are filtered out) |
-| `prompt_version` | `v6` | Label recorded in the output `Version` column |
-| `batch_label` | `B-NY-001` | Label recorded in the output `Batch` column |
-| `input_multiline` | `true` | `true` = one JSON array per file; `false` = JSON Lines (JSONL) |
-
-Also update `targets.dev.workspace.host` in `databricks.yml` to point to your workspace.
-
-### Step 3 — Validate and deploy
-
-```bash
-PROFILE=my-profile
-CATALOG=my_catalog
-SCHEMA=my_schema
-WAREHOUSE=<your-warehouse-id>
-
 cd superior-offer-blocker
 
-# Validate the bundle
-databricks bundle validate -t dev -p $PROFILE \
-  --var catalog=$CATALOG \
-  --var schema=$SCHEMA \
-  --var warehouse_id=$WAREHOUSE
+PROFILE=<your-profile>
 
-# Deploy all resources (pipeline, jobs, dashboard)
-databricks bundle deploy -t dev -p $PROFILE \
-  --var catalog=$CATALOG \
-  --var schema=$SCHEMA \
-  --var warehouse_id=$WAREHOUSE
+databricks bundle validate --strict --target dev --profile "$PROFILE"
+databricks bundle deploy --target dev --profile "$PROFILE"
+databricks bundle run setup_job --target dev --profile "$PROFILE"
+databricks bundle run offer_blocker_pipeline --target dev --profile "$PROFILE"
 ```
 
-### Step 4 — One-time setup
+Dropping another JSON file into the configured landing volume triggers `offer_blocker_ingest_job`. Development-mode deployments keep its file-arrival trigger paused unless explicitly enabled.
 
-Creates volumes, copies the sample transcript, and builds the dimension tables and prompt table. Run this once per new environment.
+## Notes
 
-```bash
-databricks bundle run setup_job -t dev -p $PROFILE \
-  --var catalog=$CATALOG \
-  --var schema=$SCHEMA
-```
-
-### Step 5 — Run the pipeline
-
-```bash
-databricks bundle run offer_blocker_pipeline -t dev -p $PROFILE \
-  --var catalog=$CATALOG \
-  --var schema=$SCHEMA
-```
-
-### Step 6 — Verify
-
-```sql
--- Check segment inventory
-SELECT inventory_line FROM <catalog>.<schema>.gold_batch_inventory;
--- Expected: "Detected 16 segments across 13 opportunities."
-
--- Inspect findings
-SELECT * FROM <catalog>.<schema>.gold_offer_blocker_findings WHERE Code <> '—';
-
--- Enhancement: per-call enrichment
-SELECT call_tone, call_topic, call_summary, call_summary_masked
-FROM <catalog>.<schema>.gold_call_enrichment_enh;
-
--- Enhancement: follow-up emails
-SELECT opportunity_id, email_json
-FROM <catalog>.<schema>.gold_followup_email_enh;
-```
-
-### Step 7 — Incremental batches
-
-Drop a new `*.json` file into the landing Volume and the file-arrival trigger fires automatically:
-
-```bash
-# Copy a new batch file (e.g. from local or another Volume)
-databricks fs cp local_batch.json \
-  dbfs:/Volumes/$CATALOG/$SCHEMA/landing/transcripts/batch_c_ny_002.json \
-  -p $PROFILE
-```
-
-Auto Loader processes only the new file; existing records are not re-processed.
-
----
-
-## Changing the model
-
-The model endpoint is fully parameterized. To switch models:
-
-```bash
-databricks bundle deploy -t dev -p $PROFILE --var model_endpoint=databricks-meta-llama-3-3-70b-instruct
-databricks bundle run offer_blocker_pipeline -t dev -p $PROFILE --var model_endpoint=databricks-meta-llama-3-3-70b-instruct
-```
-
-The endpoint must support **batch inference**. Some pay-per-token endpoints (e.g. `claude-sonnet-5`) do not yet support batch; verify with the serving-endpoints API before switching.
-
----
-
-## Demo run result (sample batch)
-
-Running the pipeline against `data/batch_b_ny_001.json` (19 calls) produces:
-
-- `gold_batch_inventory`: `"Detected 16 segments across 13 opportunities."` — 3 out-of-region opportunities correctly filtered out
-- `gold_offer_blocker_findings`: findings coded across 4A / 4B / 4D / 4E / 4F with real transcript evidence quoted in `Evidence`
-- `gold_findings_quarantine`: 0 rows (all findings passed data-quality expectations)
-- `gold_call_enrichment_enh`: per-call sentiment, topic, entities, and summary populated with PII masked
-- `gold_followup_email_enh`: a complete blocker-aware follow-up email drafted per opportunity
-
----
-
-## Notes and known deviations from the original
-
-- **Model family:** the original used Azure OpenAI (GPT-4). This pipeline uses a Databricks-hosted Claude endpoint. Expect to re-calibrate the prompt when changing model families.
-- **`confidence` field:** categorical (High / Medium / Low) to match the original rubric and spreadsheet. The original Python used a 0–1 float.
-- **Salesforce data is synthetic.** Phone numbers in the sample are mapped to fabricated Salesforce opportunity IDs, stages, and regions. In production, replace `dim_salesforce_opportunity` with a real Salesforce sync.
-- **`input_multiline=true`** is set for the demo sample (a single JSON array). Set to `false` for production JSONL files.
-- **Chunking and integrity trailer** from the manual ChatGPT workflow are replaced by parallel per-opportunity inference + pipeline Expectations + the validation views.
+- The included Salesforce opportunity data is synthetic and intended for demonstration.
+- The sample file is a JSON array, so `input_multiline=true`; use `false` for JSON Lines input.
+- The current pipeline source root is `pipeline/`, and only `pipeline/transformations/**` is included as pipeline code. Exploratory notebooks are retained beside it but are not executed by the pipeline.
+- Workspace-authored source, Genie, dashboard, job, and pipeline changes were reconciled into this repository without deploying or modifying workspace resources.
