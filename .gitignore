@@ -1,0 +1,6 @@
+# Local presenter / scratch notes — never tracked or pushed
+DEMO_WALKTHROUGH.md
+*.local.md
+.codex-tmp/
+.isaac/
+.DS_Store
