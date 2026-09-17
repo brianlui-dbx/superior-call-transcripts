@@ -1,0 +1,17 @@
+# =============================================================================
+# [GENIE ONE EXTENSION — ADDITIVE] Seed the synthetic delivery table BEFORE the
+# ext pipeline runs (mirrors how setup_job seeds dim_salesforce_opportunity for the
+# existing pipeline). Additive: writes only ext_delivery_order_seed.
+# Prereq: the existing setup_job has already created dim_salesforce_opportunity.
+# =============================================================================
+resources:
+  jobs:
+    genie_one_setup_ext_job:
+      name: genie_one_setup_ext
+      tasks:
+        - task_key: seed_delivery
+          notebook_task:
+            notebook_path: ../src/setup_ext/gen_ext_data.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}

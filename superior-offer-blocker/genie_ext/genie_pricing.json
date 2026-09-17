@@ -1,0 +1,175 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {
+        "id": "50000000000000000000000000000001",
+        "question": [
+          "What is our average rate gap versus competitors?"
+        ]
+      },
+      {
+        "id": "50000000000000000000000000000002",
+        "question": [
+          "How does the average quoted rate compare to the competitor rate by stage?"
+        ]
+      },
+      {
+        "id": "50000000000000000000000000000003",
+        "question": [
+          "What is the average fee load by Salesforce stage?"
+        ]
+      },
+      {
+        "id": "50000000000000000000000000000004",
+        "question": [
+          "Which stage has the largest rate gap versus market?"
+        ]
+      },
+      {
+        "id": "50000000000000000000000000000005",
+        "question": [
+          "How many opportunities have a quoted rate above the competitor rate?"
+        ]
+      }
+    ]
+  },
+  "data_sources": {
+    "metric_views": [
+      {
+        "identifier": "${catalog}.${schema}.mv_pricing",
+        "column_configs": [
+          {
+            "column_name": "Salesforce Stage",
+            "enable_entity_matching": true,
+            "synonyms": [
+              "stage",
+              "deal stage"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "instructions": {
+    "example_question_sqls": [
+      {
+        "id": "e0000000000000000000000000000001",
+        "question": [
+          "What is our average rate gap versus competitors?"
+        ],
+        "sql": [
+          "SELECT MEASURE(mv_pricing.`Avg Rate Gap`) AS avg_rate_gap FROM ${catalog}.${schema}.mv_pricing"
+        ]
+      },
+      {
+        "id": "e0000000000000000000000000000002",
+        "question": [
+          "How does quoted rate compare to competitor rate by stage?"
+        ],
+        "sql": [
+          "SELECT mv_pricing.`Salesforce Stage`, MEASURE(mv_pricing.`Avg Quoted Rate`) AS quoted, MEASURE(mv_pricing.`Avg Competitor Rate`) AS competitor FROM ${catalog}.${schema}.mv_pricing GROUP BY mv_pricing.`Salesforce Stage`"
+        ]
+      },
+      {
+        "id": "e0000000000000000000000000000003",
+        "question": [
+          "What is the average fee load by Salesforce stage?"
+        ],
+        "sql": [
+          "SELECT mv_pricing.`Salesforce Stage`, MEASURE(mv_pricing.`Avg Fee Load`) AS fee_load FROM ${catalog}.${schema}.mv_pricing GROUP BY mv_pricing.`Salesforce Stage` ORDER BY fee_load DESC"
+        ]
+      },
+      {
+        "id": "e0000000000000000000000000000004",
+        "question": [
+          "Which stage has the largest rate gap versus market?"
+        ],
+        "sql": [
+          "SELECT mv_pricing.`Salesforce Stage`, MEASURE(mv_pricing.`Avg Rate Gap`) AS avg_rate_gap FROM ${catalog}.${schema}.mv_pricing GROUP BY mv_pricing.`Salesforce Stage` ORDER BY avg_rate_gap DESC LIMIT 1"
+        ]
+      },
+      {
+        "id": "e0000000000000000000000000000005",
+        "question": [
+          "How many opportunities are we quoting above the competitor rate?"
+        ],
+        "sql": [
+          "SELECT MEASURE(mv_pricing.`Opportunities`) AS opportunities FROM ${catalog}.${schema}.mv_pricing WHERE mv_pricing.`Salesforce Stage` IS NOT NULL"
+        ]
+      }
+    ],
+    "text_instructions": [
+      {
+        "id": "a0000000000000000000000000000001",
+        "content": [
+          "## PURPOSE",
+          "- Answer account price-posture questions: quoted vs competitor rate, rate gap, fee load.",
+          "- Users are Sales/Commercial and Finance leaders.",
+          "",
+          "## DISAMBIGUATION",
+          "- 'Rate gap' = Avg Rate Gap (quoted minus competitor); positive means Superior is above market.",
+          "- 'Overpriced' means a positive rate gap, not simply a high quoted rate.",
+          "",
+          "## DATA QUALITY NOTES",
+          "- Quoted and competitor rates are extracted from call transcripts (real); list_rate and fee_load are synthetic.",
+          "- rate gap is null when either the quoted or competitor rate was not stated on the call.",
+          "",
+          "## CONSTRAINTS",
+          "- Do not infer a competitor rate when none was extracted; report it as unavailable.",
+          "",
+          "## Instructions you must follow when providing summaries",
+          "- Report rates to 4 decimal places and fee load in USD.",
+          "- Note when rate gap excludes opportunities with a missing competitor rate."
+        ]
+      }
+    ]
+  },
+  "benchmarks": {
+    "questions": [
+      {
+        "id": "b0000000000000000000000000000001",
+        "question": [
+          "What is the average rate gap for Closed Lost opportunities?"
+        ],
+        "answer": [
+          {
+            "format": "SQL",
+            "content": [
+              "SELECT MEASURE(mv_pricing.`Avg Rate Gap`) AS avg_rate_gap FROM ${catalog}.${schema}.mv_pricing WHERE mv_pricing.`Salesforce Stage` = 'Closed Lost'"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "b0000000000000000000000000000002",
+        "question": [
+          "What is the average quoted rate overall?"
+        ],
+        "answer": [
+          {
+            "format": "SQL",
+            "content": [
+              "SELECT MEASURE(mv_pricing.`Avg Quoted Rate`) AS quoted FROM ${catalog}.${schema}.mv_pricing"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "b0000000000000000000000000000003",
+        "question": [
+          "Are we systematically overpriced versus the market, and where?"
+        ],
+        "answer": [
+          {
+            "format": "SQL",
+            "content": []
+          }
+        ],
+        "evaluation_note": [
+          "Agent must compare Avg Quoted Rate to Avg Competitor Rate (or use Avg Rate Gap) broken down by Salesforce Stage, cite the numbers, and note that list_rate/fee_load are synthetic while quoted/competitor rates come from call extraction. Reject if it declares 'overpriced' without the gap evidence."
+        ]
+      }
+    ]
+  }
+}

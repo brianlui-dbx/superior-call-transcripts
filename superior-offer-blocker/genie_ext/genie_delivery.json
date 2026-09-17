@@ -1,0 +1,173 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {
+        "id": "50000000000000000000000000000001",
+        "question": [
+          "What is the runout rate by month?"
+        ]
+      },
+      {
+        "id": "50000000000000000000000000000002",
+        "question": [
+          "How many verified service failures did we have in the last 90 days?"
+        ]
+      },
+      {
+        "id": "50000000000000000000000000000003",
+        "question": [
+          "What is the late delivery rate by order status?"
+        ]
+      },
+      {
+        "id": "50000000000000000000000000000004",
+        "question": [
+          "How many total gallons did we deliver by month?"
+        ]
+      },
+      {
+        "id": "50000000000000000000000000000005",
+        "question": [
+          "Which month had the worst runout rate?"
+        ]
+      }
+    ]
+  },
+  "data_sources": {
+    "metric_views": [
+      {
+        "identifier": "${catalog}.${schema}.mv_delivery",
+        "column_configs": [
+          {
+            "column_name": "Order Status",
+            "enable_entity_matching": true,
+            "description": [
+              "on_time, late, or emergency (a verified runout)."
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "instructions": {
+    "example_question_sqls": [
+      {
+        "id": "e0000000000000000000000000000001",
+        "question": [
+          "What is the runout rate by month?"
+        ],
+        "sql": [
+          "SELECT mv_delivery.`Delivery Month`, MEASURE(mv_delivery.`Runout Rate`) AS runout_rate FROM ${catalog}.${schema}.mv_delivery GROUP BY mv_delivery.`Delivery Month` ORDER BY mv_delivery.`Delivery Month`"
+        ]
+      },
+      {
+        "id": "e0000000000000000000000000000002",
+        "question": [
+          "How many verified service failures in total?"
+        ],
+        "sql": [
+          "SELECT MEASURE(mv_delivery.`Verified Failures`) AS failures FROM ${catalog}.${schema}.mv_delivery"
+        ]
+      },
+      {
+        "id": "e0000000000000000000000000000003",
+        "question": [
+          "What is the late delivery rate by order status?"
+        ],
+        "sql": [
+          "SELECT mv_delivery.`Order Status`, MEASURE(mv_delivery.`Late Delivery Rate`) AS late_rate, MEASURE(mv_delivery.`Orders`) AS orders FROM ${catalog}.${schema}.mv_delivery GROUP BY mv_delivery.`Order Status` ORDER BY late_rate DESC"
+        ]
+      },
+      {
+        "id": "e0000000000000000000000000000004",
+        "question": [
+          "How many total gallons did we deliver by month?"
+        ],
+        "sql": [
+          "SELECT mv_delivery.`Delivery Month`, MEASURE(mv_delivery.`Total Gallons`) AS gallons FROM ${catalog}.${schema}.mv_delivery GROUP BY mv_delivery.`Delivery Month` ORDER BY mv_delivery.`Delivery Month`"
+        ]
+      },
+      {
+        "id": "e0000000000000000000000000000005",
+        "question": [
+          "Which month had the worst runout rate?"
+        ],
+        "sql": [
+          "SELECT mv_delivery.`Delivery Month`, MEASURE(mv_delivery.`Runout Rate`) AS runout_rate FROM ${catalog}.${schema}.mv_delivery GROUP BY mv_delivery.`Delivery Month` ORDER BY runout_rate DESC LIMIT 1"
+        ]
+      }
+    ],
+    "text_instructions": [
+      {
+        "id": "a0000000000000000000000000000001",
+        "content": [
+          "## PURPOSE",
+          "- Answer propane delivery-reliability questions: runouts, late deliveries, gallons.",
+          "- Users are Operations leaders; assume logistics fluency.",
+          "",
+          "## DISAMBIGUATION",
+          "- 'Service failure' means a verified runout OR a late delivery (Verified Failures measure).",
+          "- 'Runout' counts only when runout_verified_flag = 1 (an operational record); never infer from complaints.",
+          "",
+          "## DATA QUALITY NOTES",
+          "- All delivery values are synthetic (is_synthetic = true); present them as illustrative.",
+          "",
+          "## CONSTRAINTS",
+          "- Do not attribute a runout to an account without a verified delivery record.",
+          "",
+          "## Instructions you must follow when providing summaries",
+          "- State the date range used and that the figures are synthetic/illustrative.",
+          "- Report runout and late rates as percentages."
+        ]
+      }
+    ]
+  },
+  "benchmarks": {
+    "questions": [
+      {
+        "id": "b0000000000000000000000000000001",
+        "question": [
+          "What is the overall verified runout rate?"
+        ],
+        "answer": [
+          {
+            "format": "SQL",
+            "content": [
+              "SELECT MEASURE(mv_delivery.`Runout Rate`) AS runout_rate FROM ${catalog}.${schema}.mv_delivery"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "b0000000000000000000000000000002",
+        "question": [
+          "How many verified failures occurred among emergency orders?"
+        ],
+        "answer": [
+          {
+            "format": "SQL",
+            "content": [
+              "SELECT MEASURE(mv_delivery.`Verified Failures`) AS failures FROM ${catalog}.${schema}.mv_delivery WHERE mv_delivery.`Order Status` = 'emergency'"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "b0000000000000000000000000000003",
+        "question": [
+          "Is delivery reliability getting better or worse, and where is the risk concentrated?"
+        ],
+        "answer": [
+          {
+            "format": "SQL",
+            "content": []
+          }
+        ],
+        "evaluation_note": [
+          "Agent must compare Runout Rate and Late Delivery Rate across Delivery Month (trend), cite the numbers, and note that values are synthetic. Reject if it claims a trend without month-over-month evidence."
+        ]
+      }
+    ]
+  }
+}

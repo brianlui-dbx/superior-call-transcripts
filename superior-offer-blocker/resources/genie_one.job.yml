@@ -1,0 +1,57 @@
+# =============================================================================
+# [GENIE ONE EXTENSION — ADDITIVE] Provision the four new Genie Agents from
+# checked-in JSON using the ADDITIVE setup notebook src/setup_ext/genie_setup_ext.py
+# (the existing src/setup/genie_setup.py reads a fixed path and is NOT modified).
+# Each Agent's `description` is what Genie One uses to route questions — keep the
+# vocabulary disjoint across Agents. Existing "Offer Blocker Analytics" Agent is
+# untouched; after this runs there are FIVE Agents under Genie One.
+# =============================================================================
+resources:
+  jobs:
+    genie_one_setup_job:
+      name: genie_one_agents_setup
+      tasks:
+        - task_key: agent_cx
+          notebook_task:
+            notebook_path: ../src/setup_ext/genie_setup_ext.py
+            base_parameters:
+              files_path: ${workspace.file_path}
+              warehouse_id: ${var.warehouse_id}
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              title: CX & Service Recovery
+              agent_json: genie_ext/genie_cx.json
+              description: "Contact-center service experience: hold time, queue and abandon, repeat contacts, CSAT, agent/team/skill. Use for how painful the service experience was."
+        - task_key: agent_delivery
+          notebook_task:
+            notebook_path: ../src/setup_ext/genie_setup_ext.py
+            base_parameters:
+              files_path: ${workspace.file_path}
+              warehouse_id: ${var.warehouse_id}
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              title: Delivery Reliability
+              agent_json: genie_ext/genie_delivery.json
+              description: "Propane delivery reliability: verified runouts, late or missed deliveries, gallons, order status. Use for whether we physically failed to serve an account."
+        - task_key: agent_pricing
+          notebook_task:
+            notebook_path: ../src/setup_ext/genie_setup_ext.py
+            base_parameters:
+              files_path: ${workspace.file_path}
+              warehouse_id: ${var.warehouse_id}
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              title: Pricing Position
+              agent_json: genie_ext/genie_pricing.json
+              description: "Account price posture vs market: quoted rate, competitor/current-supplier rate, rate gap, fee load. Use for whether we are priced above market."
+        - task_key: agent_retention
+          notebook_task:
+            notebook_path: ../src/setup_ext/genie_setup_ext.py
+            base_parameters:
+              files_path: ${workspace.file_path}
+              warehouse_id: ${var.warehouse_id}
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              title: Customer Retention Decision
+              agent_json: genie_ext/genie_retention.json
+              description: "Retention and pricing decisions: raise-vs-protect segmentation, churn-risk tier, contribution and dollars at stake, churn-reduction economics. Use for the strategic 'which accounts do we raise vs protect' question — this Agent pre-joins the other domains."

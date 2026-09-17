@@ -1,0 +1,23 @@
+# =============================================================================
+# [GENIE ONE EXTENSION — ADDITIVE] Second SDP pipeline.
+# Separate root_path/glob so the EXISTING offer_blocker_pipeline is untouched.
+# Builds the ext_* facts and the account_retention_base base view.
+# =============================================================================
+resources:
+  pipelines:
+    genie_one_ext_pipeline:
+      name: genie_one_ext_poc
+      serverless: true
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      channel: CURRENT
+      development: true
+      root_path: ../pipeline_ext
+      libraries:
+        - glob:
+            include: ../pipeline_ext/transformations/**
+      configuration:
+        catalog: ${var.catalog}
+        schema: ${var.schema}
+        region_1: ${var.region_1}
+        region_2: ${var.region_2}

@@ -1,0 +1,41 @@
+# =============================================================================
+# [GENIE ONE EXTENSION — ADDITIVE] Deploy governed Metric Views via a
+# bundle-managed SQL job (DABs has no native metric-view resource — this is the
+# pattern from the databricks-metric-views skill). Run AFTER the ext pipeline so
+# account_retention_base exists. Additive: creates NEW views only.
+# =============================================================================
+resources:
+  jobs:
+    genie_one_metric_views_job:
+      name: genie_one_metric_views
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+      tasks:
+        - task_key: create_mv_cx_service
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/metric_views/mv_cx_service.metric_view.sql
+        - task_key: create_mv_pricing
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/metric_views/mv_pricing.metric_view.sql
+        - task_key: create_mv_delivery
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/metric_views/mv_delivery.metric_view.sql
+        # mv_retention sources the multi-fact base view, so build it last.
+        - task_key: create_mv_retention
+          depends_on:
+            - task_key: create_mv_cx_service
+            - task_key: create_mv_pricing
+            - task_key: create_mv_delivery
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/metric_views/mv_retention.metric_view.sql
