@@ -4,6 +4,12 @@ This repository turns Superior Plus Propane sales-call transcripts into structur
 
 The deployable project is [`superior-offer-blocker/`](superior-offer-blocker/).
 
+> **New: Multi-domain Genie One demo extension.** An **additive** (zero existing files
+> modified) extension turns the single-domain Offer Blocker solution into a five-Agent,
+> **native Genie One** demo anchored on a strategic outcome — *retention-aware pricing*.
+> Start at the package front door: **[`docs/GENIE_ONE_DEMO_INDEX.md`](docs/GENIE_ONE_DEMO_INDEX.md)**.
+> See the [Genie One demo extension](#genie-one-demo-extension-additive) section below.
+
 ## What it does
 
 The solution:
@@ -82,12 +88,88 @@ The setup job provisions or updates the agent from the checked-in JSON.
 
 The dashboard was created manually and then imported into the bundle source. Before a future deployment to the existing development target, explicitly bind the DAB resource key `offer_blocker_dashboard` to the dashboard ID above. Otherwise, the existing bundle state may still target the older dashboard.
 
+## Genie One demo extension (additive)
+
+The [`docs/GENIE_ONE_DEMO_INDEX.md`](docs/GENIE_ONE_DEMO_INDEX.md) package extends this
+solution into a **multi-domain, native Genie One** demo. It is **strictly additive** — every
+artifact is net-new and **no existing pipeline, table, job, dashboard, or Genie definition is
+modified**. It is built to the conventions in
+[databricks/databricks-agent-skills](https://github.com/databricks/databricks-agent-skills).
+
+### Design constraints
+
+- **Native Genie One only** — no Supervisor Agent / Agent Bricks. Genie One routes each
+  question to the single most relevant **Genie Agent** by that Agent's `description`.
+  Because native routing does not live-join four Agents, all cross-domain synthesis is
+  **pre-joined in the pipeline** into a governed metric view and exposed through one hub Agent.
+- **Additive only** — new objects read from the existing published tables and never write to
+  or alter them. New pipeline code lives in a separate `pipeline_ext/` root with its own
+  resource files.
+
+### Five Genie Agents under Genie One
+
+| Agent | Metric-view source | Status |
+|---|---|---|
+| Offer Blocker Analytics | (existing tables) | Existing |
+| CX & Service Recovery | `mv_cx_service` | New |
+| Delivery Reliability | `mv_delivery` | New |
+| Pricing Position | `mv_pricing` | New |
+| **Customer Retention Decision** (strategic hub) | `mv_retention` | New |
+
+The Retention Decision Agent carries the cross-domain "raise vs protect" story. Its
+`mv_retention` metric view is sourced from `account_retention_base`, which pre-aggregates each
+domain fact to `opportunity_id` grain **before** joining (anti-fan-out). The three domain Agents
+provide single-domain drill-downs the talk track routes to.
+
+### Extension objects (all net-new)
+
+| Path | Purpose |
+|---|---|
+| `pipeline_ext/transformations/gold/ext_cx_contact.sql` | CX/contact-center fact from `bronze_transcripts` (LEFT JOIN preserves non-sales calls) |
+| `pipeline_ext/transformations/gold/ext_pricing_position.sql` | Pricing fact — real `ai_extract` rates + synthetic list rate / fee load |
+| `pipeline_ext/transformations/gold/ext_delivery_order.sql` | Delivery-reliability fact reading the synthetic seed |
+| `pipeline_ext/transformations/gold/account_retention_base.sql` | Multi-fact base view, one row per `opportunity_id`, pre-aggregated |
+| `src/metric_views/mv_{cx_service,pricing,delivery,retention}.metric_view.sql` | Four governed metric views (`mv_retention` is the hub) |
+| `src/setup_ext/gen_ext_data.py` | Spark+Faker synthetic delivery seed (skewed, story-driven, `is_synthetic`) |
+| `src/setup_ext/genie_setup_ext.py` | Additive, parameterized Agent-provisioning notebook |
+| `genie_ext/build_genie_*.py` → `genie_*.json` | Four Agent build scripts and validated `serialized_space` v2 JSONs |
+| `genie_ext/create_agents_cli.sh` | CLI fallback to provision the four Agents (catalog remap) |
+| `resources/genie_one.pipeline.yml` | Additive SDP (separate root/glob) |
+| `resources/genie_one_setup_ext.job.yml` | Seeds synthetic delivery before the ext pipeline |
+| `resources/genie_one_metric_views.job.yml` | Deploys the four metric views (retention last) |
+| `resources/genie_one.job.yml` | Provisions the four new Genie Agents |
+
+### Deploy order
+
+```bash
+cd superior-offer-blocker
+PROFILE=<your-profile>
+
+databricks bundle validate --strict --target dev --profile "$PROFILE"
+databricks bundle deploy               --target dev --profile "$PROFILE"
+databricks bundle run genie_one_setup_ext_job    --target dev --profile "$PROFILE"  # seed synthetic delivery
+databricks bundle run genie_one_ext_pipeline     --target dev --profile "$PROFILE"  # facts + base view
+databricks bundle run genie_one_metric_views_job --target dev --profile "$PROFILE"  # 4 metric views
+databricks bundle run genie_one_setup_job        --target dev --profile "$PROFILE"  # 4 Genie Agents
+```
+
+Prerequisite: the existing `setup_job` must already have created `dim_salesforce_opportunity`.
+Metric-view metadata requires **DBR 17.3+**. Full details, validation queries, the 20-minute
+talk track, and a demo-day cheat-sheet are in
+[`docs/GENIE_ONE_DEMO_INDEX.md`](docs/GENIE_ONE_DEMO_INDEX.md) and
+[`superior-offer-blocker/genie_ext/DEPLOY_RUNBOOK.md`](superior-offer-blocker/genie_ext/DEPLOY_RUNBOOK.md).
+
 ## Repository layout
 
 ```text
 .
 ├── README.md
-├── docs/                              Architecture and data-flow diagrams
+├── docs/                              Architecture, data-flow diagrams, and Genie One demo package
+│   ├── GENIE_ONE_DEMO_INDEX.md        Front door for the Genie One demo extension
+│   ├── genie_one_demo_onepager.html   Slide-ready strategy one-pager
+│   ├── genie_one_demo_talktrack.md    20-minute demo talk track
+│   ├── genie_one_additive_implementation.md
+│   └── genie_one_demo_build_tasks.md
 ├── examples/                          Sanitized inputs and reference outputs
 ├── original/                          Original hand-written Python workflow
 └── superior-offer-blocker/
@@ -97,7 +179,11 @@ The dashboard was created manually and then imported into the bundle source. Bef
     │   ├── offer_blocker.pipeline.yml Serverless SDP definition
     │   ├── offer_blocker.job.yml      File-arrival pipeline job
     │   ├── setup.job.yml              Setup and Genie provisioning job
-    │   └── offer_blocker.dashboard.yml
+    │   ├── offer_blocker.dashboard.yml
+    │   ├── genie_one.pipeline.yml      [ext] Additive SDP: domain facts + base view
+    │   ├── genie_one_setup_ext.job.yml [ext] Synthetic delivery seed job
+    │   ├── genie_one_metric_views.job.yml [ext] Metric-view deploy job
+    │   └── genie_one.job.yml           [ext] Genie Agent provisioning job
     ├── pipeline/
     │   ├── transformations/
     │   │   ├── bronze/
@@ -105,14 +191,21 @@ The dashboard was created manually and then imported into the bundle source. Bef
     │   │   └── gold/
     │   └── explorations/
     │       └── ai_top_drivers_exploration.py
+    ├── pipeline_ext/                   [ext] Additive pipeline root
+    │   └── transformations/gold/       ext_cx_contact, ext_pricing_position,
+    │                                   ext_delivery_order, account_retention_base
     ├── src/
     │   ├── setup/
     │   │   ├── setup.py
     │   │   └── genie_setup.py
+    │   ├── setup_ext/                  [ext] gen_ext_data.py, genie_setup_ext.py
+    │   ├── metric_views/               [ext] mv_cx_service, mv_pricing, mv_delivery, mv_retention
     │   └── dashboards/
     │       └── offer_blocker.lvdash.json
     ├── genie/
     │   └── genie_agent.json
+    ├── genie_ext/                      [ext] Agent builders + JSONs, CLI fallback,
+    │                                   README, DEPLOY_RUNBOOK, DEMO_DAY_CHEATSHEET
     ├── data/
     │   └── batch_b_ny_001.json
     └── seeds/
