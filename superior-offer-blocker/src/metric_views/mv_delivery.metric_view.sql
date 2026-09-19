@@ -1,11 +1,16 @@
 -- [GENIE ONE EXTENSION — ADDITIVE] mv_delivery (governed Metric View)
 -- Single-fact source (ext_delivery_order). Requires DBR 17.3+ for metadata.
-CREATE OR REPLACE VIEW ${catalog}.${schema}.mv_delivery
+-- Session catalog/schema come from the job's :catalog/:schema parameters
+-- (IDENTIFIER binds the value safely). This keeps the file additive and
+-- portable across workspaces without ${...} text substitution.
+USE CATALOG IDENTIFIER(:catalog);
+USE SCHEMA IDENTIFIER(:schema);
+CREATE OR REPLACE VIEW mv_delivery
 WITH METRICS
 LANGUAGE YAML
 AS $$
 version: 1.1
-source: ${catalog}.${schema}.ext_delivery_order
+source: ext_delivery_order
 comment: "Propane delivery reliability: verified runouts, late deliveries, gallons. One row per delivery order. Values are synthetic (is_synthetic = true)."
 dimensions:
   - name: Order Status

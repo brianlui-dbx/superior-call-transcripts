@@ -71,7 +71,8 @@ px AS (
   SELECT
     opportunity_id,
     ROUND(AVG(rate_gap_vs_competitor), 4)                           AS rate_gap_vs_competitor,
-    ROUND(AVG(fee_load), 2)                                         AS fee_load
+    ROUND(AVG(fee_load), 2)                                         AS fee_load,
+    MAX(rate_pressure_flag)                                         AS rate_pressure_flag
   FROM ext_pricing_position
   GROUP BY opportunity_id
 ),
@@ -109,6 +110,13 @@ SELECT
   -- pricing
   px.rate_gap_vs_competitor,
   px.fee_load,
+  COALESCE(px.rate_pressure_flag, 0)           AS rate_pressure_flag,
+  -- Combined rate-uncompetitive signal (4A. Rate/price uncompetitive): TRUE when the real
+  -- 4A blocker was coded on a call, OR the pricing fact shows Superior quoting above market
+  -- (rate_pressure_flag). Broadened beyond the sparse 4A code so the strategic signal is
+  -- grounded in the pricing evidence that actually varies across the book.
+  CASE WHEN COALESCE(blk.rate_objection_flag,0) = 1 OR COALESCE(px.rate_pressure_flag,0) = 1
+       THEN 1 ELSE 0 END                       AS rate_uncompetitive_flag,
   -- delivery
   COALESCE(del.runout_verified_flag, 0)        AS runout_verified_flag,
   COALESCE(del.late_delivery_flag, 0)          AS late_delivery_flag,
@@ -117,8 +125,11 @@ SELECT
   -- synthetic trailing contribution (labeled): base $600 +/- deterministic spread
   ROUND(600 + (abs(hash(o.opportunity_id)) % 400) - 200, 2) AS trailing_contribution,
   -- rule-based churn-risk tier (NO calibrated probabilities)
+  -- High = the "churn bomb": rate-uncompetitive AND a verified service failure on the
+  -- same account (the stacked case the demo reveals at minute ~6:30).
   CASE
-    WHEN COALESCE(blk.rate_objection_flag,0) = 1 AND COALESCE(del.verified_failure_count,0) > 0 THEN 'High'
+    WHEN (COALESCE(blk.rate_objection_flag,0) = 1 OR COALESCE(px.rate_pressure_flag,0) = 1)
+      AND COALESCE(del.verified_failure_count,0) > 0 THEN 'High'
     WHEN COALESCE(blk.unresolved_blocker_flag,0) = 1 OR COALESCE(del.verified_failure_count,0) > 0
       OR COALESCE(cx.repeat_contact_flag,0) = 1 THEN 'Medium'
     ELSE 'Low'
@@ -126,7 +137,7 @@ SELECT
   -- raise vs protect segment (the strategic call)
   CASE
     WHEN COALESCE(del.verified_failure_count,0) > 0 OR COALESCE(cx.repeat_contact_flag,0) = 1
-      OR COALESCE(blk.rate_objection_flag,0) = 1 THEN 'Protect'
+      OR COALESCE(blk.rate_objection_flag,0) = 1 OR COALESCE(px.rate_pressure_flag,0) = 1 THEN 'Protect'
     ELSE 'Can Raise'
   END AS raise_vs_protect_segment,
   TRUE AS is_synthetic

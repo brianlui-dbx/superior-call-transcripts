@@ -83,3 +83,18 @@ targets:
     default: true
     workspace:
       host: https://adb-7405605163137288.8.azuredatabricks.net
+
+  # ---------------------------------------------------------------------------
+  # `cc` target: deploys to the adb-7405615135791589 workspace via the
+  # `dbw-brlui-stable-cc` CLI profile. Overrides catalog + warehouse to objects
+  # that exist there. Deploy with:
+  #   databricks bundle deploy -t cc -p dbw-brlui-stable-cc
+  # ---------------------------------------------------------------------------
+  cc:
+    mode: development
+    workspace:
+      host: https://adb-7405615135791589.9.azuredatabricks.net
+    variables:
+      catalog: brlui
+      schema: call_transcripts_poc
+      warehouse_id: 8e296615e533c601

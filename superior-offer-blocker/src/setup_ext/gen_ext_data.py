@@ -33,10 +33,15 @@ from datetime import date, timedelta
 # Read existing opportunities (read-only) — the FK universe.
 opps = spark.table(FQ_OPP).select("opportunity_id", "region", "stage_name")
 
-# Deterministic "wounded cohort": ~20% of opps (hash-based) get concentrated failures.
-# Skew, not uniform: wounded => 3-6 orders w/ high failure odds; healthy => 1-3 clean orders.
+# Deterministic "wounded cohort": ~30% of opps (hash-based) get concentrated failures.
+# The SAME hash predicate (abs(hash(opportunity_id)) % 100 < 30) is reused in
+# ext_pricing_position so the wounded cohort ALSO carries the positive synthetic rate gap
+# => the churn-bomb (rate pressure + verified service failure on the SAME account)
+# reliably materializes. ~30% (vs 20%) guarantees several stacked cases on the small
+# ~16-opp demo dataset. Skew, not uniform: wounded => 3-6 orders w/ high failure odds;
+# healthy => 1-3 clean, on-time orders.
 opps = opps.withColumn("h", F.abs(F.hash("opportunity_id")))
-opps = opps.withColumn("is_wounded", (F.col("h") % 100 < 20).cast("int"))
+opps = opps.withColumn("is_wounded", (F.col("h") % 100 < 30).cast("int"))
 opps = opps.withColumn(
     "n_orders",
     F.when(F.col("is_wounded") == 1, 3 + (F.col("h") % 4)).otherwise(1 + (F.col("h") % 3)),
@@ -54,10 +59,19 @@ orders = (
     # deliveries spread across the last 90 days (recent enough for the base view's 90d window)
     .withColumn("days_ago", (F.col("oh") % 90))
     .withColumn("delivery_date", F.date_sub(F.lit(TODAY), F.col("days_ago")))
-    # promised 2-5 days before delivery; wounded cohort skews to late (actual > promised)
-    .withColumn("promised_gap", F.when(F.col("is_wounded") == 1, (F.col("oh") % 4) - 3)  # can be negative => late
-                                  .otherwise((F.col("oh") % 3) + 1))
-    .withColumn("promised_date", F.date_sub(F.col("delivery_date"), F.col("promised_gap")))
+    # Late-delivery skew (CORRECTED so it is NOT uniform):
+    #   late  <=> delivery_date > promised_date  <=>  promised_date is BEFORE delivery.
+    #   Wounded cohort: ~65% of orders land late (promised 1-3 days BEFORE actual delivery).
+    #   Healthy cohort: delivered ON/BEFORE promise (promised 1-3 days AFTER, never late).
+    .withColumn(
+        "promised_date",
+        F.when(
+            (F.col("is_wounded") == 1) & (F.col("oh") % 100 < 65),
+            F.date_sub(F.col("delivery_date"), 1 + (F.col("oh") % 3)),   # promise earlier => LATE
+        ).otherwise(
+            F.date_add(F.col("delivery_date"), 1 + (F.col("oh") % 3)),   # promise later  => on time
+        ),
+    )
     .withColumn("late_delivery_flag",
                 (F.col("delivery_date") > F.col("promised_date")).cast("int"))
     # gallons: log-normal-ish via skewed buckets (never uniform)

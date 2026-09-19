@@ -20,23 +20,25 @@ WITH blockers AS (
   GROUP BY opportunity_id
 ),
 drafted AS (
-  -- One ai_query call per opportunity. failOnError => false so a bad row can't fail
-  -- the batch; the call returns STRUCT{response, errorMessage}.
+  -- One ai_gen call per opportunity. ai_gen is the built-in general text-generation
+  -- AI Function that routes through the workspace's Unity Gateway default model, so it
+  -- needs NO explicit serving endpoint (unlike ai_query, whose pay-per-token endpoints
+  -- are disabled on Unity-Gateway-only workspaces). The strict-JSON contract is enforced
+  -- via an explicit instruction in the prompt instead of ai_query's responseFormat arg.
   SELECT
     d.opportunity_id,
     d.stage_name,
-    ai_query(
-      'databricks-claude-opus-4-8',
+    ai_gen(
       concat(
         'You are a Superior Plus Propane inside-sales agent. Using the call transcript and the ',
         'identified offer blocker(s), draft a professional, friendly follow-up email to the customer ',
         'that acknowledges their specific concern and proposes a concrete next step. Keep it concise.',
+        '\n\nReturn ONLY strict minified JSON (no markdown, no code fences) with exactly these keys: ',
+        'subject, greeting, call_summary, blocker_acknowledgement, recommended_next_step, ',
+        'contact_information, closing. Each value must be a string.',
         '\n\nIDENTIFIED BLOCKERS: ', coalesce(b.blocker_context, 'none identified'),
         '\n\nCALL TRANSCRIPT:\n', d.transcript_text
-      ),
-      responseFormat => '{"type":"json_schema","json_schema":{"name":"followup_email","strict":true,"schema":{"type":"object","additionalProperties":false,"required":["subject","greeting","call_summary","blocker_acknowledgement","recommended_next_step","contact_information","closing"],"properties":{"subject":{"type":"string"},"greeting":{"type":"string"},"call_summary":{"type":"string"},"blocker_acknowledgement":{"type":"string"},"recommended_next_step":{"type":"string"},"contact_information":{"type":"string"},"closing":{"type":"string"}}}}}',
-      failOnError => false,
-      modelParameters => named_struct('max_tokens', 1200)
+      )
     ) AS resp
   FROM gold_opportunity_enrichment d
   LEFT JOIN blockers b USING (opportunity_id)
@@ -44,7 +46,13 @@ drafted AS (
 SELECT
   opportunity_id,
   stage_name,
-  -- with failOnError => false, ai_query returns STRUCT{result, errorMessage}
-  resp.result        AS email_json,    -- strict-JSON string; parse with from_json downstream
-  resp.errorMessage  AS email_error
+  -- ai_gen returns the generated string directly (strict-JSON per the prompt contract);
+  -- parse with from_json downstream. email_error is retained for schema compatibility:
+  -- it is NULL on success, or the JSON-parse failure reason if the output is malformed.
+  resp AS email_json,
+  CASE
+    WHEN from_json(resp, 'STRUCT<subject:STRING>') IS NULL
+    THEN 'ai_gen output was not valid JSON'
+    ELSE NULL
+  END AS email_error
 FROM drafted;

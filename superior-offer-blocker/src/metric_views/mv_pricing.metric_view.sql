@@ -1,11 +1,16 @@
 -- [GENIE ONE EXTENSION — ADDITIVE] mv_pricing (governed Metric View)
 -- Single-fact source (ext_pricing_position). Requires DBR 17.3+ for metadata.
-CREATE OR REPLACE VIEW ${catalog}.${schema}.mv_pricing
+-- Session catalog/schema come from the job's :catalog/:schema parameters
+-- (IDENTIFIER binds the value safely). This keeps the file additive and
+-- portable across workspaces without ${...} text substitution.
+USE CATALOG IDENTIFIER(:catalog);
+USE SCHEMA IDENTIFIER(:schema);
+CREATE OR REPLACE VIEW mv_pricing
 WITH METRICS
 LANGUAGE YAML
 AS $$
 version: 1.1
-source: ${catalog}.${schema}.ext_pricing_position
+source: ext_pricing_position
 comment: "Account price posture vs market: quoted vs competitor rate, rate gap, fee load. One row per opportunity."
 dimensions:
   - name: Salesforce Stage

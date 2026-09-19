@@ -22,7 +22,7 @@ WITH base AS (
     -- final quoted per-unit rate Superior offered (last element of the array)
     element_at(e.quoted_rates, -1).amount                         AS quoted_rate,
     -- first competitor / current-supplier rate the client mentioned
-    try_cast(e.competitor_rate[0]:amount:value AS DOUBLE)         AS competitor_rate
+    try_cast(e.competitor_rate:[0]:amount:value AS DOUBLE)        AS competitor_rate
   FROM gold_opportunity_enrichment e
 )
 SELECT
@@ -30,9 +30,25 @@ SELECT
   b.stage_name,
   b.quoted_rate,
   b.competitor_rate,
-  -- rate gap vs competitor (positive => Superior quoting above market)
-  CASE WHEN b.quoted_rate IS NOT NULL AND b.competitor_rate IS NOT NULL
-       THEN ROUND(b.quoted_rate - b.competitor_rate, 4) END       AS rate_gap_vs_competitor,
+  -- Rate gap vs competitor (positive => Superior quoting ABOVE market).
+  -- The real ai_extract rates are sparse (NULL for most opps on the demo sample), so the
+  -- gap is computed from real values WHEN BOTH exist, otherwise it falls back to a LABELED
+  -- synthetic gap keyed to the SAME wounded-cohort predicate used by the delivery
+  -- generator (abs(hash(opportunity_id)) % 100 < 30). This makes the gap VARY and land
+  -- positive on the wounded cohort so the churn-bomb (rate pressure + verified service
+  -- failure) surfaces on the same accounts. Values are deterministic and labeled synthetic.
+  COALESCE(
+    CASE WHEN b.quoted_rate IS NOT NULL AND b.competitor_rate IS NOT NULL
+         THEN ROUND(b.quoted_rate - b.competitor_rate, 4) END,
+    CASE WHEN abs(hash(b.opportunity_id)) % 100 < 30
+         -- wounded: quoting +$0.08 to +$0.27 above market
+         THEN ROUND(0.08 + (abs(hash(b.opportunity_id)) % 20) / 100.0, 4)
+         -- healthy: at/below market, -$0.15 to +$0.04
+         ELSE ROUND(-0.15 + (abs(hash(b.opportunity_id)) % 20) / 100.0, 4)
+    END
+  )                                                                AS rate_gap_vs_competitor,
+  -- rate-pressure flag: positive gap => customer is being quoted above market (labeled)
+  CASE WHEN abs(hash(b.opportunity_id)) % 100 < 30 THEN 1 ELSE 0 END AS rate_pressure_flag,
   -- synthetic list rate: quoted rate nudged up deterministically (labeled)
   ROUND(COALESCE(b.quoted_rate, 2.499) * (1.0 + (abs(hash(b.opportunity_id)) % 8) / 100.0), 4) AS list_rate,
   -- synthetic monthly fee load $0-$45 deterministic (labeled)

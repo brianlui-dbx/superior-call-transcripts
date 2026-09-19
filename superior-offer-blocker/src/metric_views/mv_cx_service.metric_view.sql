@@ -1,12 +1,17 @@
 -- [GENIE ONE EXTENSION — ADDITIVE] mv_cx_service (governed Metric View)
 -- Single-fact source (ext_cx_contact) per the one-fact-source rule. Requires DBR 17.3+
 -- for synonyms/format metadata.
-CREATE OR REPLACE VIEW ${catalog}.${schema}.mv_cx_service
+-- Session catalog/schema come from the job's :catalog/:schema parameters
+-- (IDENTIFIER binds the value safely). This keeps the file additive and
+-- portable across workspaces without ${...} text substitution.
+USE CATALOG IDENTIFIER(:catalog);
+USE SCHEMA IDENTIFIER(:schema);
+CREATE OR REPLACE VIEW mv_cx_service
 WITH METRICS
 LANGUAGE YAML
 AS $$
 version: 1.1
-source: ${catalog}.${schema}.ext_cx_contact
+source: ext_cx_contact
 comment: "Contact-center service experience: hold time, queue, abandon, repeat contacts, CSAT — by region/team/skill. One row per call."
 dimensions:
   - name: Region

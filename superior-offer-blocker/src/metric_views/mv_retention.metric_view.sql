@@ -11,12 +11,17 @@
 -- Deterministic scenario constants are illustrative (labeled), not booked EBITDA:
 --   $600 contribution per retained account, $150,000 program cost, 100,000-acct base.
 -- =============================================================================
-CREATE OR REPLACE VIEW ${catalog}.${schema}.mv_retention
+-- Session catalog/schema come from the job's :catalog/:schema parameters
+-- (IDENTIFIER binds the value safely). This keeps the file additive and
+-- portable across workspaces without ${...} text substitution.
+USE CATALOG IDENTIFIER(:catalog);
+USE SCHEMA IDENTIFIER(:schema);
+CREATE OR REPLACE VIEW mv_retention
 WITH METRICS
 LANGUAGE YAML
 AS $$
 version: 1.1
-source: ${catalog}.${schema}.account_retention_base
+source: account_retention_base
 comment: "Retention & pricing decision metrics: raise-vs-protect segmentation, churn-risk tiers, contribution and dollars at stake, and the illustrative churn-reduction economics. One row per opportunity."
 dimensions:
   - name: Region
@@ -48,8 +53,8 @@ measures:
     comment: "Opportunities in the High churn-risk tier (rate objection AND a verified service failure)."
     synonyms: ["high risk accounts", "churn bomb accounts"]
   - name: Rate Objection And Failure
-    expr: COUNT(1) FILTER (WHERE rate_objection_flag = 1 AND verified_failure_count > 0)
-    comment: "The 'aha' cohort: a 4A rate objection stacked on a verified runout/late delivery."
+    expr: COUNT(1) FILTER (WHERE rate_uncompetitive_flag = 1 AND verified_failure_count > 0)
+    comment: "The 'aha' cohort: rate-uncompetitive (4A rate objection and/or quoting above market) stacked on a verified runout/late delivery."
   - name: Total Contribution
     expr: SUM(trailing_contribution)
     format: {type: currency, currency_code: USD, decimal_places: {type: max, places: 0}}
