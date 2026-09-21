@@ -129,107 +129,63 @@ a pre-joined base view, four governed metric views, and four Genie Agents — al
 native **Genie One**, which routes each question to one Agent by its `description`.
 
 ```mermaid
-flowchart TB
-    %% ============ BASE SOLUTION (existing, unmodified) ============
+flowchart LR
+    %% ===== BASE SOLUTION (existing, unmodified) =====
     subgraph BASE["BASE SOLUTION — Offer Blocker Intelligence (existing, unmodified)"]
-        direction TB
-        SRC["Transcript JSON<br/>(landing volume)"]
-        SEED_SF["dim_salesforce_opportunity<br/>(synthetic CRM · setup_job)"]
-
-        subgraph BRONZE["Bronze"]
-            BTI["bronze_transcripts_ingest<br/>(Auto Loader)"]
-            BT["bronze_transcripts<br/>(SCD1 dedup)"]
-        end
-        subgraph SILVER["Silver"]
-            STJ["silver_transcript_sf_joined<br/>(phone join + region filter)"]
-            SOD["silver_opportunity_dialogue<br/>(one dialogue / opp)"]
-        end
-        subgraph GOLD["Gold — AI Functions"]
-            GOE["gold_opportunity_enrichment<br/>(blocker codes · quoted/competitor rates)"]
-            GOB["gold_offer_blockers"]
-            GOBS["gold_offer_blocker_summary"]
-            GCE["gold_call_enrichment_enh<br/>(tone · topic · summary)"]
-            GFE["gold_followup_email_enh<br/>(ai_gen email)"]
-        end
-
-        SRC --> BTI --> BT --> STJ
-        SEED_SF --> STJ
-        STJ --> SOD --> GOE --> GOB --> GOBS
-        SOD --> GCE
-        GOBS --> GFE
-
-        GENIE0["Genie Agent:<br/>Offer Blocker Analytics"]
-        DASH["AI/BI Dashboard:<br/>Sales Call Coaching"]
-        GOBS --> GENIE0
-        GCE --> GENIE0
-        GOBS --> DASH
-        GCE --> DASH
+        direction LR
+        SRC["Transcript JSON<br/>(landing volume)"] --> BT["bronze_transcripts<br/>(Auto Loader + SCD1)"]
+        SEED_SF["dim_salesforce_opportunity<br/>(synthetic CRM)"] --> STJ
+        BT --> STJ["silver_transcript_sf_joined<br/>(phone join + region filter)"]
+        STJ --> SOD["silver_opportunity_dialogue"]
+        SOD --> GOE["gold_opportunity_enrichment<br/>(blocker codes + quoted/competitor rates)"]
+        GOE --> GOBS["gold_offer_blocker_summary"]
+        SOD --> GCE["gold_call_enrichment_enh<br/>(tone + topic + summary)"]
+        GOBS --> GFE["gold_followup_email_enh<br/>(ai_gen email)"]
+        GOBS --> GENIE0["Genie Agent:<br/>Offer Blocker Analytics"]
+        GOBS --> DASH["AI/BI Dashboard"]
     end
 
-    %% ============ GENIE ONE EXTENSION (additive, read-only from base) ============
-    subgraph EXT["GENIE ONE EXTENSION (additive · reads base tables · never writes them)"]
-        direction TB
-        GEN["gen_ext_data.py<br/>(Spark + Faker · skewed cohort)"]
-        SEED_DEL["ext_delivery_order_seed<br/>(synthetic seed)"]
-        GEN --> SEED_DEL
+    %% ===== GENIE ONE EXTENSION (additive, read-only from base) =====
+    subgraph EXT["GENIE ONE EXTENSION (additive — reads base tables, never writes them)"]
+        direction LR
+        GEN["gen_ext_data.py<br/>(Spark + Faker, skewed cohort)"] --> EDEL["ext_delivery_order<br/>(delivery reliability)"]
+        ECX["ext_cx_contact<br/>(CX / contact-center)"]
+        EPX["ext_pricing_position<br/>(quoted vs competitor rate)"]
 
-        subgraph EFACTS["Domain facts (pipeline_ext)"]
-            ECX["ext_cx_contact<br/>(CX / contact-center)"]
-            EPX["ext_pricing_position<br/>(quoted vs competitor rate)"]
-            EDEL["ext_delivery_order<br/>(delivery reliability)"]
-        end
-        ARB["account_retention_base<br/>(pre-joined · 1 row / opp · anti-fan-out)"]
-
-        subgraph MVS["Governed metric views"]
-            MVCX["mv_cx_service"]
-            MVPX["mv_pricing"]
-            MVDEL["mv_delivery"]
-            MVRET["mv_retention (hub)"]
-        end
-
-        subgraph AGENTS["Genie Agents"]
-            ACX["CX & Service Recovery"]
-            APX["Pricing Position"]
-            ADEL["Delivery Reliability"]
-            ARET["Customer Retention Decision<br/>(strategic hub)"]
-        end
-
-        SEED_DEL --> EDEL
-        ECX --> ARB
+        ECX --> ARB["account_retention_base<br/>(pre-joined, 1 row/opp, anti-fan-out)"]
         EPX --> ARB
         EDEL --> ARB
 
-        ECX --> MVCX --> ACX
-        EPX --> MVPX --> APX
-        EDEL --> MVDEL --> ADEL
-        ARB --> MVRET --> ARET
+        ECX --> MVCX["mv_cx_service"] --> ACX["Agent: CX and Service Recovery"]
+        EPX --> MVPX["mv_pricing"] --> APX["Agent: Pricing Position"]
+        EDEL --> MVDEL["mv_delivery"] --> ADEL["Agent: Delivery Reliability"]
+        ARB --> MVRET["mv_retention<br/>(hub)"] --> ARET["Agent: Customer Retention Decision<br/>(strategic hub)"]
     end
 
-    %% ---- cross-boundary reads (base -> extension) ----
-    BT -.reads.-> ECX
-    SEED_SF -.reads.-> ECX
-    SEED_SF -.reads.-> ARB
-    GOE -.reads.-> EPX
-    GOBS -.reads.-> ARB
-    GCE -.reads.-> ARB
+    %% ===== native Genie One routing =====
+    USER(["Business user<br/>(raise vs protect question)"]) --> G1(["Genie One<br/>(routes by Agent description)"])
+    G1 --- GENIE0
+    G1 --- ACX
+    G1 --- APX
+    G1 --- ADEL
+    G1 --- ARET
 
-    %% ---- native Genie One routing ----
-    G1(["Genie One<br/>(routes by Agent description)"])
-    GENIE0 --- G1
-    ACX --- G1
-    APX --- G1
-    ADEL --- G1
-    ARET --- G1
-    USER(["Business user<br/>(raise vs protect question)"]) --> G1
+    %% ---- cross-boundary read-only dependencies (base -> extension) ----
+    BT -. reads .-> ECX
+    SEED_SF -. reads .-> ECX
+    SEED_SF -. reads .-> ARB
+    GOE -. reads .-> EPX
+    GOBS -. reads .-> ARB
+    GCE -. reads .-> ARB
 
     classDef base fill:#E8F0F2,stroke:#1B3139,color:#1B3139;
     classDef ext fill:#FFECE5,stroke:#FF3621,color:#1B3139;
-    classDef hub fill:#FF3621,stroke:#1B3139,color:#ffffff,font-weight:bold;
-    classDef one fill:#1B3139,stroke:#FF3621,color:#ffffff,font-weight:bold;
-    class SRC,SEED_SF,BTI,BT,STJ,SOD,GOE,GOB,GOBS,GCE,GFE,GENIE0,DASH base;
-    class GEN,SEED_DEL,ECX,EPX,EDEL,ARB,MVCX,MVPX,MVDEL,ACX,APX,ADEL ext;
+    classDef hub fill:#FF3621,stroke:#1B3139,color:#ffffff;
+    classDef one fill:#1B3139,stroke:#FF3621,color:#ffffff;
+    class SRC,SEED_SF,BT,STJ,SOD,GOE,GOBS,GCE,GFE,GENIE0,DASH base;
+    class GEN,EDEL,ECX,EPX,ARB,MVCX,MVPX,MVDEL,ACX,APX,ADEL ext;
     class MVRET,ARET hub;
-    class G1 one;
+    class G1,USER one;
 ```
 
 **How to read it:** solid arrows are build-time data lineage; dotted arrows are the extension's
