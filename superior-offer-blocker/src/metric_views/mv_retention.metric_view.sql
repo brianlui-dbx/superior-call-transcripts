@@ -71,6 +71,11 @@ measures:
   - name: Avg Hold Seconds
     expr: AVG(avg_hold_seconds)
     format: {type: number, decimal_places: {type: exact, places: 1}}
+  - name: Avg Fee Load
+    expr: AVG(fee_load)
+    comment: "Average synthetic monthly ancillary fee load (rental/MUC/delivery) per account, in USD. Labeled synthetic."
+    format: {type: currency, currency_code: USD, decimal_places: {type: exact, places: 2}}
+    synonyms: ["fee load", "ancillary fees", "monthly fees", "fee burden"]
   # --- composed ratios (re-aggregate safely at any grain) ---
   - name: At-Risk Rate
     expr: "MEASURE(`At-Risk Opportunities`) / MEASURE(`Opportunities`)"

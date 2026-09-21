@@ -54,6 +54,25 @@ Genie One routes by each Agent's `description` — vocabulary below is chosen to
 | 6 | 16:00 | Retention-first outreach draft | Retention Decision |
 | 7 | 18:00 | $/churn-point sensitivity | **Customer Retention Decision** |
 
+## Validated live answers (run against the deployed workspace, 2026-09-21)
+Validated end-to-end on the production-scale dataset (**316 opportunities, 508 enriched calls, 557 CX contacts, 858 delivery orders**) in workspace `adb-7405615135791589`, catalog `brlui`. All 7 questions routed correctly and returned COMPLETED. Expected numbers to anticipate on stage:
+
+| # | Routed to | Live result to expect |
+|---|---|---|
+| 1 | Offer Blocker | 6 blockers ranked; **4A = 29 Closed-Lost opps in NY/NJ (2nd, just behind 4B=33)** — establishes rate as a top-2 blocker without being the whole story. |
+| 2 | CX & Service Recovery | 8 region×team rows; hold **23–102s**, abandon **1.6–18.5%** (NJ Inside Sales worst at 18.5%) — real service variation to point at. |
+| 3 | Customer Retention Decision | **The reveal: 76 accounts** with 4A **+** a verified runout/late delivery, all **High** tier; top opp values **$23,795 (NY) / $18,093 (NJ)**. |
+| 4 | Customer Retention Decision | At-risk NY/NJ quoted **~0.16 above competitor**, avg **fee load ~$22** (uses the added `Avg Fee Load` measure). |
+| 5 | Customer Retention Decision | Book splits **66 "Can Raise" vs 225 "Protect"** (NY+NJ); Can-Raise = low/med risk, negative rate gap, no failures; Protect = high risk, positive gap, failures. |
+| 6 | Customer Retention Decision | Top-5 Protect accounts by contribution at risk (**$20,809 / $15,614 / $13,117 / $13,012 / $11,027**), each with its primary blocker. |
+| 7 | Customer Retention Decision | Scenario: **$225K / $450K / $900K** net at 0.5/1/2 pts; **break-even 0.33pt**. (Measure returns $450K per full point; label all as illustrative, not booked EBITDA.) |
+
+**Reveal-beat framing:** `Rate Objection And Failure` = **76** and `Contribution At Risk` (Protect) = **~$134K** across NY/NJ — say "76 accounts where a price objection sits on top of a verified service failure — that's the churn bomb."
+
+**Two rehearsal notes surfaced during validation:**
+- **Q1 ranks by opportunity count, not dollars.** `final_quoted_rate.amount` is sparse, so Genie ranks blockers by affected-opportunity count and may say "ranked equally" on value. Ask for it as *"which blockers affect the most Closed-Lost opportunities"* to get the clean 4B=33 / 4A=29 ordering, or accept the count framing. Don't promise a dollar ranking here.
+- **Q4 fee load** now resolves to the governed **`Avg Fee Load`** measure (added to `mv_retention` during validation). Before that fix Genie substituted `Avg Hold Seconds` — if you ever see hold-seconds reported as "fee load," the metric-views job didn't redeploy.
+
 ## Fallbacks & honesty
 - If a query mis-routes live: restate with the Agent's own description vocabulary (cheat-sheet), or open the pinned fallback result. Never hand-wave a wrong route.
 - Keep the labeled synthetic/illustrative banner visible. If asked "is this real data?" — CX + blocker signals are real from the call feed; delivery, fees, and contribution are synthetic and labeled; economics are an illustrative scenario, not booked EBITDA.
