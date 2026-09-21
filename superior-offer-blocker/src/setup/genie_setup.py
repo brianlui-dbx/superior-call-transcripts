@@ -16,10 +16,14 @@
 dbutils.widgets.text("files_path", "")     # bundle's synced workspace files root
 dbutils.widgets.text("warehouse_id", "")
 dbutils.widgets.text("title", "Offer Blocker Analytics")
+dbutils.widgets.text("catalog", "dbw_brlui_stable")
+dbutils.widgets.text("schema", "call_transcripts_poc")
 
 FILES_PATH = dbutils.widgets.get("files_path")
 WAREHOUSE_ID = dbutils.widgets.get("warehouse_id")
 TITLE = dbutils.widgets.get("title")
+CATALOG = dbutils.widgets.get("catalog")
+SCHEMA = dbutils.widgets.get("schema")
 
 if not FILES_PATH:
     nb = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
@@ -31,8 +35,10 @@ from databricks.sdk import WorkspaceClient
 w = WorkspaceClient()
 
 # The serialized_space field is a STRING containing the space JSON.
+# Replace the hardcoded catalog.schema so the same JSON works across targets.
 with open(f"{FILES_PATH}/genie/genie_agent.json", "r", encoding="utf-8") as f:
-    serialized_space = f.read()
+    raw = f.read()
+serialized_space = raw.replace("dbw_brlui_stable.call_transcripts_poc", f"{CATALOG}.{SCHEMA}")
 
 me = w.current_user.me().user_name
 parent_path = f"/Workspace/Users/{me}/genie_spaces"

@@ -36,3 +36,5 @@ resources:
               files_path: ${workspace.file_path}
               warehouse_id: ${var.warehouse_id}
               title: Offer Blocker Analytics
+              catalog: ${var.catalog}
+              schema: ${var.schema}
