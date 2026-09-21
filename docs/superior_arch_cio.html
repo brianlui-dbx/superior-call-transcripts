@@ -1,500 +1,175 @@
 <title>Superior Plus Propane — Data + AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,700;0,800;1,700&family=Open+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-/* ── Brand tokens ─────────────────────────────────────────── */
 :root {
-  /* Databricks */
-  --db-navy:       #1B3139;
-  --db-deep:       #0B2026;
-  --db-lava:       #FF3621;
-  --db-oat:        #F9F7F4;
-  --db-oat-mid:    #EEEDE9;
-  --db-ink:        #3A3838;
-  --db-soft:       #5A5755;
-  --db-muted:      #8A8580;
-  --db-green:      #00A972;
-
-  /* Superior Plus Propane (from superiorpropane.com CSS vars) */
-  --sp-blue:       #174086;
-  --sp-blue-dk:    #004990;
-  --sp-blue-lt:    #EDF2F9;
-  --sp-blue-tint:  #D6E4F4;
-  --sp-red:        #E21836;
-  --sp-red-lt:     #FEF0F2;
-  --sp-yellow:     #FFCA37;
-  --sp-yellow-lt:  #FFFBEC;
-  --sp-yellow-tint:#FFF3C4;
-
-  /* Layout */
-  --col-label: 192px;
-  --col-kpi:   152px;
-  --r:         6px;
-
-  /* Page bg */
-  --bg:        #ffffff;
-  --surface:   #ffffff;
+  --db-navy:    #1B3139;
+  --db-oat:     #F9F7F4;
+  --db-oat-mid: #EEEDE9;
+  --db-ink:     #3A3838;
+  --db-soft:    #5A5755;
+  --db-muted:   #8A8580;
+  --db-green:   #00A972;
+  --sp-blue:    #174086;
+  --sp-blue-dk: #004990;
+  --sp-blue-lt: #EDF2F9;
+  --sp-red:     #E21836;
+  --sp-red-lt:  #FEF0F2;
+  --sp-yellow:  #FFCA37;
+  /* Softer dark for Genie Ontology — medium teal-navy, not near-black */
+  --onto-bg:    #1C3D50;
+  --onto-bd:    rgba(255,255,255,.12);
+  --col-label:  158px;
+  --col-kpi:    122px;
+  --r: 5px;
 }
 
-/* Light-only artifact — explicit for both themes */
-:root,
-:root[data-theme="light"] {
-  --bg:       #ffffff;
-  --surface:  #ffffff;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg:      #ffffff;
-    --surface: #ffffff;
-  }
-}
-:root[data-theme="dark"] {
-  --bg:      #ffffff;
-  --surface: #ffffff;
-}
-/* This is a deliberate print/presentation artifact — committed to light. */
-
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
 
 body {
-  font-family: 'Open Sans', system-ui, sans-serif;
-  background: var(--bg);
-  color: var(--db-ink);
-  font-size: 13px;
-  line-height: 1.45;
-  padding: 0 !important;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+  font-family:'Open Sans',system-ui,sans-serif;
+  background:#fff; color:var(--db-ink);
+  font-size:11.5px; line-height:1.4;
+  padding:0 !important;
+  -webkit-print-color-adjust:exact;
+  print-color-adjust:exact;
 }
 
-/* ── Page wrapper ──────────────────────────────────────────── */
+/* ── Slide shell — 1333×750 target ──────────────────────── */
 .page {
-  width: min(1400px, 100%);
-  margin: 0 auto;
-  padding: 32px clamp(16px, 3vw, 40px) 48px;
+  width:min(1333px,100%);
+  margin:0 auto;
+  padding:14px clamp(12px,2vw,24px) 14px;
 }
 
-/* ── HEADER ────────────────────────────────────────────────── */
-.hd {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 28px;
-}
-.hd-left { display: flex; flex-direction: column; gap: 12px; }
-
-/* Co-brand logo row */
-.logos {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  flex-wrap: wrap;
-}
-
-/* SP logo block — yellow swatch treatment from their website */
-.sp-block {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--sp-yellow);
-  border-radius: 5px 0 0 5px;
-  padding: 7px 14px 7px 10px;
-  height: 40px;
-}
-.sp-flame svg { display: block; }
-.sp-text { display: flex; flex-direction: column; line-height: 1; gap: 1px; }
-.sp-sup {
-  font-family: 'Montserrat', sans-serif;
-  font-weight: 800;
-  font-style: italic;
-  font-size: 15px;
-  color: var(--sp-red);
-  letter-spacing: -.01em;
-}
-.sp-sub {
-  font-family: 'Montserrat', sans-serif;
-  font-weight: 700;
-  font-size: 9px;
-  color: var(--sp-blue-dk);
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
-
-.logo-sep {
-  width: 1px;
-  height: 40px;
-  background: var(--db-oat-mid);
-  margin: 0 20px;
-}
-
-.db-logo { height: 22px; display: block; }
-
-/* Badge */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: var(--sp-yellow-tint);
-  color: var(--sp-blue-dk);
-  border: 1.5px solid var(--sp-yellow);
-  border-radius: 20px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  padding: 3px 11px;
-  width: fit-content;
-}
-.badge-dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: var(--sp-yellow);
-  border: 1.5px solid var(--sp-blue);
-}
-
-/* Title */
+/* ── HEADER ──────────────────────────────────────────────── */
+.hd { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.hd-left { display:flex; flex-direction:column; gap:6px; }
+.logos { display:flex; align-items:center; flex-wrap:wrap; }
+.sp-block { display:flex; align-items:center; gap:6px; background:var(--sp-yellow); border-radius:4px 0 0 4px; padding:4px 10px 4px 7px; height:30px; }
+.sp-text  { display:flex; flex-direction:column; line-height:1; gap:1px; }
+.sp-sup   { font-family:'Montserrat',sans-serif; font-weight:800; font-style:italic; font-size:12px; color:var(--sp-red); }
+.sp-sub   { font-family:'Montserrat',sans-serif; font-weight:700; font-size:7.5px; color:var(--sp-blue-dk); letter-spacing:.1em; text-transform:uppercase; }
+.logo-sep { width:1px; height:30px; background:var(--db-oat-mid); margin:0 14px; }
+.db-logo  { height:17px; display:block; }
 .title {
-  font-family: 'Montserrat', sans-serif;
-  font-size: clamp(18px, 2.2vw, 25px);
-  font-weight: 800;
-  color: var(--db-deep);
-  letter-spacing: -.025em;
-  line-height: 1.2;
-  text-wrap: balance;
-  max-width: 840px;
+  font-family:'Montserrat',sans-serif;
+  font-size:clamp(13px,1.45vw,18.5px); font-weight:800; color:#0B2026;
+  letter-spacing:-.022em; line-height:1.2; text-wrap:balance;
 }
-.t-sp { color: var(--sp-blue); }
-.t-ai { color: var(--sp-red); }
+.t-sp { color:var(--sp-blue); }
+.t-ai { color:var(--sp-red); }
+.title-rule { width:50px; height:3px; background:var(--sp-yellow); border-radius:2px; }
+.hd-right  { flex-shrink:0; text-align:right; padding-top:2px; }
+.powered   { font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--db-muted); line-height:1.5; }
 
-/* SP-style yellow rule under headline */
-.title-rule {
-  width: 72px; height: 3px;
-  background: var(--sp-yellow);
-  border-radius: 2px;
-  margin-top: 4px;
-}
+/* ── DIAGRAM ─────────────────────────────────────────────── */
+.diagram { display:flex; flex-direction:column; border:1.5px solid var(--db-oat-mid); border-radius:7px; overflow:hidden; }
+.row { display:grid; grid-template-columns:var(--col-label) 1fr var(--col-kpi); }
+.row+.row { border-top:1.5px solid var(--db-oat-mid); }
 
-.hd-right {
-  flex-shrink: 0;
-  text-align: right;
-  padding-top: 2px;
-}
-.powered {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-  color: var(--db-muted);
-  line-height: 1.5;
-}
+.lbl { padding:7px 11px; background:var(--db-oat); border-right:1.5px solid var(--db-oat-mid); display:flex; flex-direction:column; justify-content:center; gap:2px; }
+.lbl-n { font-weight:700; font-size:10.5px; color:var(--sp-blue); }
+.lbl-d { font-size:9px; color:var(--db-muted); line-height:1.3; }
 
-/* ── DIAGRAM ────────────────────────────────────────────────── */
-.diagram {
-  display: flex;
-  flex-direction: column;
-  border: 1.5px solid var(--db-oat-mid);
-  border-radius: 8px;
-  overflow: hidden;
-}
+.cnt { padding:7px 10px; display:flex; flex-wrap:wrap; align-items:center; gap:5px; border-right:1.5px solid var(--db-oat-mid); }
 
-.row {
-  display: grid;
-  grid-template-columns: var(--col-label) 1fr var(--col-kpi);
-}
-.row + .row { border-top: 1.5px solid var(--db-oat-mid); }
+.kpi { padding:7px 10px; background:var(--db-oat); display:flex; flex-direction:column; justify-content:center; gap:3px; }
+.kpi-hd { font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:var(--db-muted); padding-bottom:3px; border-bottom:1px solid var(--db-oat-mid); margin-bottom:1px; }
+.kpi-row { display:flex; align-items:center; gap:4px; font-size:10px; font-weight:600; color:var(--db-navy); }
+.arr { font-size:11px; font-weight:700; }
+.dn  { color:var(--sp-red); }
+.up  { color:var(--db-green); }
 
-/* Label col */
-.lbl {
-  padding: 14px 16px;
-  background: var(--db-oat);
-  border-right: 1.5px solid var(--db-oat-mid);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-}
-.lbl-n {
-  font-weight: 700;
-  font-size: 12px;
-  color: var(--sp-blue);
-}
-.lbl-d {
-  font-size: 10.5px;
-  color: var(--db-muted);
-  line-height: 1.35;
-}
+/* ── USE CASES ───────────────────────────────────────────── */
+.uc { flex:1; min-width:120px; border:1.5px solid var(--db-oat-mid); border-radius:var(--r); padding:7px 10px; background:#fff; }
+.uc-n { font-size:10.5px; font-weight:700; color:var(--db-navy); line-height:1.25; }
+.uc-d { font-size:9px; color:var(--db-soft); margin-top:2px; line-height:1.3; }
 
-/* Content col */
-.cnt {
-  padding: 12px 14px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  border-right: 1.5px solid var(--db-oat-mid);
-}
+/* ── CONSUMPTION ─────────────────────────────────────────── */
+.cc { flex:1; min-width:165px; display:flex; align-items:center; gap:8px; border:1.5px solid var(--db-oat-mid); border-radius:var(--r); padding:6px 10px; background:#fff; }
+.cc.red-hi { border-color:var(--sp-red); background:var(--sp-red-lt); }
+.cc.red-hi .cc-n { color:var(--sp-red); }
+.cc-icon { width:20px; height:20px; flex-shrink:0; }
+.cc-n { font-size:10.5px; font-weight:700; color:var(--db-navy); }
+.cc-d { font-size:9px; color:var(--db-soft); margin-top:2px; line-height:1.3; }
 
-/* KPI col */
-.kpi {
-  padding: 12px 14px;
-  background: var(--db-oat);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 5px;
-}
-.kpi-hd {
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .1em;
-  color: var(--db-muted);
-  padding-bottom: 5px;
-  border-bottom: 1px solid var(--db-oat-mid);
-  margin-bottom: 1px;
-}
-.kpi-row {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--db-navy);
-}
-.arr { font-size: 13px; font-weight: 700; }
-.dn  { color: var(--sp-red); }
-.up  { color: var(--db-green); }
+/* ── GENIE ONTOLOGY ──────────────────────────────────────── */
+.row.onto .lbl  { background:var(--onto-bg); border-right-color:var(--onto-bd); }
+.row.onto .lbl-n { color:rgba(255,255,255,.88); }
+.row.onto .lbl-d { color:rgba(255,255,255,.42); }
+.row.onto .cnt  { background:var(--onto-bg); border-right-color:var(--onto-bd); flex-direction:row; align-items:center; gap:10px; padding:9px 11px; flex-wrap:nowrap; }
+.row.onto .kpi  { background:var(--onto-bg); }
 
-/* ── USE CASE CARDS ─────────────────────────────────────────── */
-.uc {
-  flex: 1;
-  min-width: 155px;
-  border: 1.5px solid var(--db-oat-mid);
-  border-radius: var(--r);
-  padding: 10px 13px;
-  background: var(--surface);
-}
-.uc.sp-hi { border-color: var(--sp-red); background: var(--sp-red-lt); }
-.uc-n {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--db-navy);
-  line-height: 1.25;
-}
-.uc.sp-hi .uc-n { color: var(--sp-red); }
-.uc-d { font-size: 10.5px; color: var(--db-soft); margin-top: 3px; line-height: 1.35; }
+.kg-wrap { flex:0 0 58%; min-width:0; overflow-x:auto; overflow-y:visible; }
+.kg-wrap svg { display:block; }
+.kg-node { fill:rgba(255,255,255,.08); stroke:rgba(255,255,255,.34); stroke-width:1.4; }
+.kg-text { fill:rgba(255,255,255,.88); font-family:'Open Sans',sans-serif; font-size:9.5px; font-weight:500; text-anchor:middle; dominant-baseline:central; }
+.kg-edge { stroke:rgba(255,255,255,.20); stroke-width:1.1; }
 
-/* ── CONSUMPTION CELLS ──────────────────────────────────────── */
-.cc {
-  flex: 1;
-  min-width: 190px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1.5px solid var(--db-oat-mid);
-  border-radius: var(--r);
-  padding: 10px 13px;
-  background: var(--surface);
-}
-.cc.sp-hi { border-color: var(--sp-blue); background: var(--sp-blue-lt); }
-.cc-icon { width: 26px; height: 26px; flex-shrink: 0; }
-.cc-n { font-size: 12.5px; font-weight: 700; color: var(--db-navy); }
-.cc-d { font-size: 10.5px; color: var(--db-soft); margin-top: 2px; line-height: 1.35; }
+.onto-right { flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }
+.op { border-radius:4px; padding:6px 9px; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.10); }
+.op-t { font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--sp-yellow); margin-bottom:2px; }
+.op-b { font-size:9.5px; color:rgba(255,255,255,.60); line-height:1.38; }
+.onto-ft { font-size:8.5px; color:rgba(255,255,255,.30); font-style:italic; margin-top:1px; }
 
-/* ── ONTOLOGY ROW (dark) ─────────────────────────────────────── */
-.row.onto .lbl  {
-  background: var(--db-deep);
-  border-right-color: rgba(255,255,255,.10);
-}
-.row.onto .lbl-n { color: rgba(255,255,255,.90); }
-.row.onto .lbl-d { color: rgba(255,255,255,.42); }
-.row.onto .cnt  {
-  background: var(--db-deep);
-  border-right-color: rgba(255,255,255,.10);
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 14px 16px;
-}
-.row.onto .kpi  { background: var(--db-deep); }
+/* ── DATA PRODUCTS ───────────────────────────────────────── */
+.dp { flex:1; min-width:100px; border:1.5px solid var(--db-oat-mid); border-radius:var(--r); padding:7px 10px; background:#fff; }
+.dp.hub { border-color:var(--sp-blue); background:var(--sp-blue-lt); }
+.dp-n { font-size:10.5px; font-weight:700; color:var(--db-navy); line-height:1.2; }
+.dp.hub .dp-n { color:var(--sp-blue-dk); }
+.dp-d { font-size:9px; color:var(--db-muted); margin-top:2px; line-height:1.3; }
 
-.pills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.pill {
-  display: inline-flex;
-  align-items: center;
-  border: 1.5px solid rgba(255,255,255,.22);
-  border-radius: 20px;
-  padding: 3px 10px;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: rgba(255,255,255,.82);
-  background: rgba(255,255,255,.05);
-  white-space: nowrap;
-}
-.pill.r { border-color: var(--sp-red);    color: #fff; background: rgba(226,24,54,.18); }
-.pill.y { border-color: var(--sp-yellow); color: var(--sp-yellow); background: rgba(255,202,55,.10); }
+/* ── GOVERNANCE ──────────────────────────────────────────── */
+.gc { flex:1; display:flex; align-items:flex-start; gap:7px; border:1.5px solid var(--db-oat-mid); border-radius:var(--r); padding:7px 10px; background:#fff; }
+.gc-icon { width:18px; height:18px; flex-shrink:0; margin-top:1px; }
+.gc-n { font-size:10.5px; font-weight:700; color:var(--db-navy); }
+.gc-d { font-size:9px; color:var(--db-muted); margin-top:2px; line-height:1.3; }
 
-.onto-panels {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  width: 100%;
-}
-.op {
-  border-radius: 5px;
-  padding: 9px 12px;
-  background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,255,255,.09);
-}
-.op-t {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-  color: var(--sp-yellow);
-  margin-bottom: 4px;
-}
-.op-b { font-size: 11px; color: rgba(255,255,255,.58); line-height: 1.4; }
-.onto-ft { font-size: 10.5px; color: rgba(255,255,255,.32); font-style: italic; }
+/* ── FOUNDATION ──────────────────────────────────────────── */
+.fc { flex:1; min-width:120px; border:1.5px solid var(--db-oat-mid); border-radius:var(--r); padding:7px 10px; background:#fff; }
+.fc.wide { flex:2; }
+.fc-lbl { font-size:10.5px; font-weight:700; color:var(--db-navy); margin-bottom:4px; display:flex; align-items:center; gap:5px; }
+.fc-icon { width:15px; height:15px; }
+.fc-d { font-size:9px; color:var(--db-muted); line-height:1.3; }
+.medaln { display:flex; align-items:center; gap:3px; }
+.med { font-size:8.5px; font-weight:700; padding:2px 6px; border-radius:3px; white-space:nowrap; }
+.med.b { background:#CD7F32; color:#fff; }
+.med.s { background:#8C9BA5; color:#fff; }
+.med.g { background:#B8960C; color:#fff; }
+.med-a { color:var(--db-muted); font-size:8.5px; }
+.chips { display:flex; flex-wrap:wrap; gap:3px; margin-top:4px; }
+.chip  { font-family:'DM Mono',monospace; font-size:8px; padding:1.5px 5px; border-radius:3px; background:var(--db-oat-mid); color:var(--db-soft); }
 
-/* ── DATA PRODUCT CARDS ─────────────────────────────────────── */
-.dp {
-  flex: 1;
-  min-width: 125px;
-  border: 1.5px solid var(--db-oat-mid);
-  border-radius: var(--r);
-  padding: 10px 12px;
-  background: var(--surface);
-}
-.dp.hub { border-color: var(--sp-blue); background: var(--sp-blue-lt); }
-.dp-b {
-  display: inline-block;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: .07em;
-  text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 3px;
-  margin-bottom: 5px;
-}
-.dp-b.h  { background: var(--sp-blue);    color: #ffffff; }
-.dp-b.d  { background: var(--db-oat-mid); color: var(--db-soft); }
-.dp-b.e  { background: #EEF2F4;           color: var(--db-muted); }
-.dp-n { font-size: 11.5px; font-weight: 700; color: var(--db-navy); line-height: 1.25; }
-.dp.hub .dp-n { color: var(--sp-blue-dk); }
-.dp-d { font-size: 10px; color: var(--db-muted); margin-top: 3px; line-height: 1.35; }
+/* ── SOURCES ─────────────────────────────────────────────── */
+.src-group { display:flex; flex-wrap:wrap; gap:4px; align-items:center; width:100%; }
+.src-plat  { font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:.09em; color:var(--db-muted); padding-right:2px; white-space:nowrap; flex-shrink:0; }
+.stag { display:inline-flex; align-items:center; gap:5px; border:1.5px solid var(--db-oat-mid); border-radius:20px; padding:2px 9px; font-size:10px; font-weight:500; color:var(--db-soft); background:#fff; white-space:nowrap; }
+.sdot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
 
-/* ── GOVERNANCE CELLS ───────────────────────────────────────── */
-.gc {
-  flex: 1;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  border: 1.5px solid var(--db-oat-mid);
-  border-radius: var(--r);
-  padding: 10px 13px;
-  background: var(--surface);
+@media (max-width:800px) {
+  :root { --col-label:100px; --col-kpi:0px; }
+  .kpi { display:none; }
+  .row { grid-template-columns:var(--col-label) 1fr; }
+  .row.onto .cnt { flex-direction:column; }
 }
-.gc-icon { width: 22px; height: 22px; flex-shrink: 0; margin-top: 1px; }
-.gc-n { font-size: 12.5px; font-weight: 700; color: var(--db-navy); }
-.gc-d { font-size: 10.5px; color: var(--db-muted); margin-top: 2px; line-height: 1.35; }
-
-/* ── FOUNDATION CELLS ───────────────────────────────────────── */
-.fc {
-  flex: 1;
-  min-width: 155px;
-  border: 1.5px solid var(--db-oat-mid);
-  border-radius: var(--r);
-  padding: 10px 13px;
-  background: var(--surface);
-}
-.fc.wide { flex: 2.2; }
-.fc-lbl {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--db-navy);
-  margin-bottom: 7px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.fc-icon { width: 18px; height: 18px; }
-.fc-d { font-size: 10.5px; color: var(--db-muted); line-height: 1.35; }
-
-.medaln { display: flex; align-items: center; gap: 4px; }
-.med {
-  font-size: 10px; font-weight: 700;
-  padding: 3px 8px; border-radius: 3px;
-  white-space: nowrap;
-}
-.med.b { background: #CD7F32; color: #fff; }
-.med.s { background: #8C9BA5; color: #fff; }
-.med.g { background: #B8960C; color: #fff; }
-.med-a { color: var(--db-muted); font-size: 10px; }
-
-.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
-.chip {
-  font-family: 'DM Mono', monospace;
-  font-size: 9.5px;
-  padding: 2px 7px;
-  border-radius: 3px;
-  background: var(--db-oat-mid);
-  color: var(--db-soft);
-}
-
-/* ── SOURCE TAGS ────────────────────────────────────────────── */
-.stag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1.5px solid var(--db-oat-mid);
-  border-radius: 20px;
-  padding: 4px 12px;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--db-soft);
-  background: var(--surface);
-  white-space: nowrap;
-}
-.sdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-
-/* ── RESPONSIVE ─────────────────────────────────────────────── */
-@media (max-width: 900px) {
-  :root { --col-label: 120px; --col-kpi: 0px; }
-  .kpi { display: none; }
-  .row { grid-template-columns: var(--col-label) 1fr; }
-}
-@media (max-width: 560px) {
-  :root { --col-label: 0px; }
-  .lbl { display: none; }
-  .row { grid-template-columns: 1fr; }
-  .onto-panels { grid-template-columns: 1fr; }
-}
-
-/* ── PRINT ──────────────────────────────────────────────────── */
 @media print {
-  @page { size: A3 landscape; margin: 10mm; }
-  body  { font-size: 11px; }
-  .page { width: 100%; padding: 0; }
-  .row  { page-break-inside: avoid; }
+  @page { size:A3 landscape; margin:8mm; }
+  body  { font-size:10px; }
+  .page { width:100%; padding:0; }
+  .row  { page-break-inside:avoid; }
 }
 </style>
 
 <div class="page">
 
-  <!-- HEADER -->
   <div class="hd">
     <div class="hd-left">
-
-      <!-- Co-brand logos -->
       <div class="logos">
         <div class="sp-block">
-          <span class="sp-flame">
-            <svg width="20" height="22" viewBox="0 0 20 22" fill="none" aria-hidden="true">
-              <path d="M10 1C10 1 3 8 3 13.5C3 17.09 6.13 20 10 20C13.87 20 17 17.09 17 13.5C17 8 10 1 10 1Z" fill="#E21836"/>
-              <path d="M10 7C10 7 7 10.5 7 13C7 14.66 8.34 16 10 16C11.66 16 13 14.66 13 13C13 10.5 10 7 10 7Z" fill="#FFCA37"/>
-            </svg>
-          </span>
+          <svg width="16" height="18" viewBox="0 0 20 22" fill="none" aria-hidden="true" style="flex-shrink:0">
+            <path d="M10 1C10 1 3 8 3 13.5C3 17.09 6.13 20 10 20C13.87 20 17 17.09 17 13.5C17 8 10 1 10 1Z" fill="#E21836"/>
+            <path d="M10 7C10 7 7 10.5 7 13C7 14.66 8.34 16 10 16C11.66 16 13 14.66 13 13C13 10.5 10 7 10 7Z" fill="#FFCA37"/>
+          </svg>
           <div class="sp-text">
             <span class="sp-sup">Superior</span>
             <span class="sp-sub">Propane</span>
@@ -502,49 +177,43 @@ body {
         </div>
         <div class="logo-sep"></div>
         <img class="db-logo" src="databricks-logo-full-color.svg" alt="Databricks"
-             onerror="this.replaceWith(Object.assign(document.createElement('span'),{style:'font-family:DM Sans,sans-serif;font-weight:700;font-size:16px;color:#FF3621',textContent:'Databricks'}))">
+             onerror="this.replaceWith(Object.assign(document.createElement('span'),{style:'font-family:DM Sans,sans-serif;font-weight:700;font-size:13px;color:#FF3621',textContent:'Databricks'}))">
       </div>
-
-      <span class="badge"><span class="badge-dot"></span>Live demo — retention-aware pricing</span>
-
       <h1 class="title">
-        One governed foundation, with an ontology that maps<br>
+        One governed platform, with an ontology specific to
         <span class="t-sp">Superior Plus Propane</span> for <span class="t-ai">AI</span>
       </h1>
       <div class="title-rule"></div>
     </div>
-
     <div class="hd-right">
       <div class="powered">Powered by<br>Databricks Data + AI</div>
     </div>
-  </div><!-- /hd -->
+  </div>
 
-
-  <!-- DIAGRAM GRID -->
   <div class="diagram">
 
-    <!-- ── ROW 1: USE CASES ── -->
+    <!-- USE CASES -->
     <div class="row">
       <div class="lbl">
         <span class="lbl-n">Use cases</span>
-        <span class="lbl-d">Delivered by AI agents, used by sales and operations</span>
+        <span class="lbl-d">Delivered by AI agents, used by sales &amp; ops</span>
       </div>
       <div class="cnt">
-        <div class="uc sp-hi">
+        <div class="uc">
           <div class="uc-n">Retention-aware pricing</div>
-          <div class="uc-d">Raise rates without buying back attrition — the raise-vs-protect decision, per account</div>
+          <div class="uc-d">Raise rates without buying back attrition</div>
         </div>
         <div class="uc">
           <div class="uc-n">Competitive win-rate recovery</div>
-          <div class="uc-d">Understand why accounts switch on rate, fees, or contract terms</div>
+          <div class="uc-d">Understand why accounts switch on rate or terms</div>
         </div>
         <div class="uc">
           <div class="uc-n">Sales rep coaching</div>
-          <div class="uc-d">Turn every call into a scored, coaching-ready signal with follow-up actions</div>
+          <div class="uc-d">Every call scored with follow-up actions</div>
         </div>
         <div class="uc">
           <div class="uc-n">Self-service analytics</div>
-          <div class="uc-d">Any business question, answered in plain language without IT</div>
+          <div class="uc-d">Any business question, answered in plain language</div>
         </div>
       </div>
       <div class="kpi">
@@ -556,110 +225,132 @@ body {
       </div>
     </div>
 
-    <!-- ── ROW 2: CONSUMPTION ── -->
+    <!-- CONSUMPTION -->
     <div class="row">
       <div class="lbl">
         <span class="lbl-n">Consumption</span>
         <span class="lbl-d">Same data, every audience</span>
       </div>
       <div class="cnt">
-        <div class="cc sp-hi">
-          <img class="cc-icon" src="genie-icon-full-color.svg" alt="Genie"
-               onerror="this.style.display='none'">
+        <div class="cc red-hi">
+          <img class="cc-icon" src="genie-icon-full-color.svg" alt="" onerror="this.style.display='none'">
           <div>
             <div class="cc-n">Genie One</div>
-            <div class="cc-d">Natural-language Q&amp;A — routes each question to the right agent by domain</div>
+            <div class="cc-d">AI coworker — ask questions and trigger actions using natural language</div>
           </div>
         </div>
         <div class="cc">
-          <img class="cc-icon" src="ai-bi-dashboards-icon-full-color.svg" alt="AI/BI Dashboards"
-               onerror="this.style.display='none'">
+          <img class="cc-icon" src="ai-bi-dashboards-icon-full-color.svg" alt="" onerror="this.style.display='none'">
           <div>
-            <div class="cc-n">AI/BI Dashboard</div>
-            <div class="cc-d">Sales call coaching — executive overview and per-rep scoring</div>
+            <div class="cc-n">Databricks Apps &amp; AI/BI Dashboards</div>
+            <div class="cc-d">Sales call coaching — executive and per-rep views</div>
           </div>
         </div>
         <div class="cc">
           <div>
             <div class="cc-n">APIs &amp; MCP</div>
-            <div class="cc-d">Governed model access — serve capabilities to other systems and agents</div>
+            <div class="cc-d">Governed model access for other systems and agents</div>
           </div>
         </div>
       </div>
       <div class="kpi"></div>
     </div>
 
-    <!-- ── ROW 3: PROPANE BUSINESS ONTOLOGY (dark) ── -->
+    <!-- GENIE ONTOLOGY -->
     <div class="row onto">
       <div class="lbl">
-        <span class="lbl-n">Propane business ontology</span>
+        <span class="lbl-n">Genie Ontology</span>
         <span class="lbl-d">A business map that AI can navigate</span>
       </div>
       <div class="cnt">
-        <div class="pills">
-          <span class="pill r">Account</span>
-          <span class="pill r">Opportunity</span>
-          <span class="pill">Call</span>
-          <span class="pill r">Offer blocker</span>
-          <span class="pill y">Rate objection</span>
-          <span class="pill">Delivery order</span>
-          <span class="pill y">Competitor rate</span>
-          <span class="pill">Region</span>
-          <span class="pill">Contract term</span>
-          <span class="pill">Service window</span>
+        <!-- Compact 2-row graph (8 core entities) -->
+        <div class="kg-wrap">
+          <!--
+            2 rows × 4 cols. Node w=115, h=18, gap-h=18, gap-v=40.
+            Col x-centers: 72, 205, 338, 471
+            Row y-centers: 21, 61
+            ViewBox: 0 0 544 80
+          -->
+          <svg width="100%" viewBox="0 0 544 80" preserveAspectRatio="xMinYMin meet" style="overflow:visible" aria-label="Propane entity graph">
+            <!-- Edges -->
+            <line class="kg-edge" x1="130" y1="21" x2="147" y2="21"/>
+            <line class="kg-edge" x1="263" y1="21" x2="280" y2="21"/>
+            <line class="kg-edge" x1="396" y1="21" x2="413" y2="21"/>
+            <line class="kg-edge" x1="72" y1="30" x2="72" y2="52"/>
+            <line class="kg-edge" x1="205" y1="30" x2="205" y2="52"/>
+            <line class="kg-edge" x1="338" y1="30" x2="338" y2="52"/>
+            <line class="kg-edge" x1="471" y1="30" x2="471" y2="52"/>
+            <line class="kg-edge" x1="130" y1="61" x2="147" y2="61"/>
+            <line class="kg-edge" x1="263" y1="61" x2="280" y2="61"/>
+            <line class="kg-edge" x1="396" y1="61" x2="413" y2="61"/>
+            <!-- Row 1 -->
+            <rect class="kg-node" x="14" y="12" width="115" height="18" rx="9"/>
+            <text class="kg-text" x="72" y="21">Account</text>
+            <rect class="kg-node" x="147" y="12" width="115" height="18" rx="9"/>
+            <text class="kg-text" x="205" y="21">Opportunity</text>
+            <rect class="kg-node" x="280" y="12" width="115" height="18" rx="9"/>
+            <text class="kg-text" x="338" y="21">Call</text>
+            <rect class="kg-node" x="413" y="12" width="115" height="18" rx="9"/>
+            <text class="kg-text" x="471" y="21">Offer Blocker</text>
+            <!-- Row 2 -->
+            <rect class="kg-node" x="14" y="52" width="115" height="18" rx="9"/>
+            <text class="kg-text" x="72" y="61">Region</text>
+            <rect class="kg-node" x="147" y="52" width="115" height="18" rx="9"/>
+            <text class="kg-text" x="205" y="61">Contract Term</text>
+            <rect class="kg-node" x="280" y="52" width="115" height="18" rx="9"/>
+            <text class="kg-text" x="338" y="61">Rate Objection</text>
+            <rect class="kg-node" x="413" y="52" width="115" height="18" rx="9"/>
+            <text class="kg-text" x="471" y="61">Competitor Rate</text>
+          </svg>
         </div>
-        <div class="onto-panels">
+        <!-- Right: panels -->
+        <div class="onto-right">
           <div class="op">
             <div class="op-t">Modeled semantics</div>
-            <div class="op-b">Unity Catalog metric views: what "rate objection," "verified runout," and "at-risk account" mean for Superior Plus Propane — defined once, inherited by every agent and dashboard.</div>
+            <div class="op-b">Unity Catalog metric views: "rate objection," "verified runout," and "at-risk account" — defined once, inherited by every agent and dashboard.</div>
           </div>
           <div class="op">
             <div class="op-t">Learned knowledge</div>
-            <div class="op-b">Context mined from call transcripts, delivery records, and CRM — how Superior's pricing dynamics, seasonal patterns, and regional markets actually work, encoded for AI.</div>
+            <div class="op-b">Pricing dynamics, seasonal patterns, and regional markets mined from transcripts, delivery records, and CRM — encoded for AI.</div>
           </div>
+          <div class="onto-ft">Governed in Unity Catalog — agents inherit the same access rules as people.</div>
         </div>
-        <div class="onto-ft">Governed in Unity Catalog — agents inherit the same access rules as people, so data permissions follow Superior Plus Propane's org chart.</div>
       </div>
       <div class="kpi"></div>
     </div>
 
-    <!-- ── ROW 4: DOMAIN DATA PRODUCTS ── -->
+    <!-- DATA PRODUCTS -->
     <div class="row">
       <div class="lbl">
-        <span class="lbl-n">Domain data products</span>
-        <span class="lbl-d">Built once, reused across every agent, dashboard, and API</span>
+        <span class="lbl-n">Data products</span>
+        <span class="lbl-d">Built once, reused everywhere</span>
       </div>
       <div class="cnt">
         <div class="dp">
-          <span class="dp-b e">Existing</span>
           <div class="dp-n">Offer Blocker Intelligence</div>
-          <div class="dp-d">Blocker codes (4A–4F), dispositions, quoted rates, coaching signals, follow-up emails</div>
+          <div class="dp-d">Blocker codes, dispositions, rates, follow-up emails</div>
         </div>
         <div class="dp">
-          <span class="dp-b d">Domain</span>
           <div class="dp-n">CX &amp; Service Recovery</div>
-          <div class="dp-d">Contact frequency, resolution time, satisfaction score by account</div>
+          <div class="dp-d">Contact frequency, resolution, satisfaction</div>
         </div>
         <div class="dp">
-          <span class="dp-b d">Domain</span>
           <div class="dp-n">Pricing Position</div>
-          <div class="dp-d">Quoted vs competitor rates, fee load, price gap by region and segment</div>
+          <div class="dp-d">Quoted vs competitor rates, fee load by region</div>
         </div>
         <div class="dp">
-          <span class="dp-b d">Domain</span>
           <div class="dp-n">Delivery Reliability</div>
-          <div class="dp-d">On-time rate, verified runout risk, service-window compliance per account</div>
+          <div class="dp-d">On-time rate, runout risk, service-window compliance</div>
         </div>
         <div class="dp hub">
-          <span class="dp-b h">Strategic hub</span>
           <div class="dp-n">Customer Retention Decision</div>
-          <div class="dp-d">Pre-joined cross-domain view — the raise-vs-protect answer, per account</div>
+          <div class="dp-d">Pre-joined view — raise-vs-protect per account</div>
         </div>
       </div>
       <div class="kpi"></div>
     </div>
 
-    <!-- ── ROW 5: GOVERNANCE ── -->
+    <!-- GOVERNANCE -->
     <div class="row">
       <div class="lbl">
         <span class="lbl-n">Unified governance</span>
@@ -667,41 +358,39 @@ body {
       </div>
       <div class="cnt">
         <div class="gc">
-          <img class="gc-icon" src="unity-catalog-icon-full-color.svg" alt="Unity Catalog"
-               onerror="this.style.display='none'">
+          <img class="gc-icon" src="unity-catalog-icon-full-color.svg" alt="" onerror="this.style.display='none'">
           <div>
             <div class="gc-n">Unity Catalog</div>
-            <div class="gc-d">Permissions, lineage, data quality, and metric views for every domain product</div>
+            <div class="gc-d">Permissions, lineage, quality, and metric views</div>
           </div>
         </div>
         <div class="gc">
           <div>
             <div class="gc-n">AI Gateway</div>
-            <div class="gc-d">Governed access to foundation models — guardrails, rate limits, cost tracking, and audit logs</div>
+            <div class="gc-d">Governed model access — guardrails, rate limits, audit</div>
           </div>
         </div>
         <div class="gc">
           <div>
             <div class="gc-n">Data stewardship</div>
-            <div class="gc-d">Sets data contracts and access policies once; every agent and dashboard inherits them</div>
+            <div class="gc-d">Contracts set once; every agent and dashboard inherits</div>
           </div>
         </div>
       </div>
       <div class="kpi"></div>
     </div>
 
-    <!-- ── ROW 6: OPEN FOUNDATION ── -->
+    <!-- FOUNDATION -->
     <div class="row">
       <div class="lbl">
         <span class="lbl-n">Open foundation</span>
-        <span class="lbl-d">Batch and streaming, open formats, no lock-in</span>
+        <span class="lbl-d">Open formats, no lock-in</span>
       </div>
       <div class="cnt" style="align-items:stretch">
         <div class="fc wide">
           <div class="fc-lbl">
-            <img class="fc-icon" src="lakeflow-icon-full-color.svg" alt="Lakeflow"
-                 onerror="this.style.display='none'">
-            Lakeflow pipelines — transcript to insight
+            <img class="fc-icon" src="lakeflow-icon-full-color.svg" alt="" onerror="this.style.display='none'">
+            Lakeflow pipelines
           </div>
           <div class="medaln">
             <span class="med b">Bronze</span><span class="med-a">→</span>
@@ -720,31 +409,37 @@ body {
         </div>
         <div class="fc">
           <div class="fc-lbl">Lakehouse</div>
-          <div class="fc-d">Delta Lake and Iceberg tables — open formats on any cloud, append-optimized for high-volume call records</div>
+          <div class="fc-d">Delta Lake + Iceberg — open formats on any cloud</div>
         </div>
         <div class="fc">
           <div class="fc-lbl">Lakebase</div>
-          <div class="fc-d">Operational Postgres for agent memory, app state, and low-latency account lookups</div>
+          <div class="fc-d">Operational Postgres for agent memory and app state</div>
         </div>
       </div>
       <div class="kpi"></div>
     </div>
 
-    <!-- ── ROW 7: SOURCES ── -->
+    <!-- SOURCES -->
     <div class="row">
       <div class="lbl">
         <span class="lbl-n">Sources</span>
         <span class="lbl-d">Unchanged systems of record</span>
       </div>
-      <div class="cnt">
-        <span class="stag"><span class="sdot" style="background:#174086"></span>Call transcripts (voice / CXone)</span>
-        <span class="stag"><span class="sdot" style="background:#00A1E0"></span>Salesforce CRM</span>
-        <span class="stag"><span class="sdot" style="background:#E21836"></span>Delivery &amp; dispatch operations</span>
-        <span class="stag"><span class="sdot" style="background:#FFCA37;outline:1px solid #ccc"></span>Market &amp; competitor rates</span>
-        <span class="stag"><span class="sdot" style="background:#00A972"></span>Service &amp; billing records</span>
+      <div class="cnt" style="flex-direction:column;align-items:flex-start;gap:4px">
+        <div class="src-group">
+          <span class="src-plat">via Azure Synapse</span>
+          <span class="stag"><span class="sdot" style="background:#0078D4"></span>Salesforce CRM</span>
+          <span class="stag"><span class="sdot" style="background:#E21836"></span>Delivery &amp; dispatch</span>
+          <span class="stag"><span class="sdot" style="background:#FFCA37;outline:1px solid #d4a800"></span>Market &amp; competitor rates</span>
+          <span class="stag"><span class="sdot" style="background:#00A972"></span>Service &amp; billing records</span>
+        </div>
+        <div class="src-group">
+          <span class="src-plat">via AWS</span>
+          <span class="stag"><span class="sdot" style="background:#FF9900"></span>Call transcripts (voice / CXone)</span>
+        </div>
       </div>
       <div class="kpi"></div>
     </div>
 
-  </div><!-- /diagram -->
-</div><!-- /page -->
+  </div>
+</div>
