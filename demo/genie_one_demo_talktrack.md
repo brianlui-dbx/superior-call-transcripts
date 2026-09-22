@@ -43,7 +43,7 @@ The instructions provide stable defaults, disjoint routing vocabulary, response 
 
 > “Superior wants to grow margin through pricing without buying the increase back in churn. The hard question is not ‘who pays the most?’ It is ‘which accounts can absorb an increase, which should we protect, and why?’ Answering that spans CRM, contact-center experience, delivery reliability, pricing, and the current pricing policy.”
 
-> “I’ll start with one focused sales question, then ask the question the way an executive actually would—without specifying tables, joins, or even a precise definition of ‘protect.’”
+> “I’ll start with one focused sales question, then ask the question the way an executive actually would—without specifying tables, joins, or the decision rule.”
 
 **Land:** This is intentionally complex and ambiguous, not a canned KPI lookup.
 
@@ -65,16 +65,16 @@ The instructions provide stable defaults, disjoint routing vocabulary, response 
 
 **Type:**
 
-> `Using the Google Drive MCP, retrieve and cite the Google Doc titled "Superior Plus 2026 Pricing Plan (DEMO)" and use its pricing objective and customer-protection guardrails as context. Then determine which NY and NJ accounts we should protect before the next price action and which can absorb an increase. Work out a defensible definition of “protect,” explain it, rank the Protect accounts by contribution at risk, and support each recommendation with the strongest available evidence across sales objections, contact-center experience, delivery reliability, and pricing. Clearly distinguish verified facts, inferred recommendations, and synthetic or illustrative inputs. Do not search any other external source.`
+> `Use Google Drive to retrieve the “Superior Plus 2026 Pricing Plan (DEMO).” Based on that plan, which NY and NJ accounts should be exempted from or receive a reduced next price increase, and which can absorb the full increase? Rank the accounts needing protection by contribution at risk, and justify the decision with sales, CX, delivery, and pricing evidence. Cite the plan and label inferred or synthetic inputs.`
 
 **While it plans, say:**
 
-> “The question has now widened. Genie retrieves the current policy through one governed Google Drive tool, then routes the analytical decision to Customer Retention Decision. I did not tell it what ‘protect’ means or which data to join; the governed retention metric view already brings the four domains together at account grain.”
+> “The question has now widened. Genie retrieves the current policy through one governed Google Drive tool, then routes the analytical decision to Customer Retention Decision. I defined the business action, but not the decision rule or which data to join; the governed retention metric view already brings the four domains together at account grain.”
 
 **On the result, point out only four things:**
 
 1. **The document context:** the cited Drive file and the specific objective/guardrails used.
-2. **The interpretation:** Genie explains how it operationalized “protect”—for example, service failure, adverse rate gap, customer friction, and churn-risk tier.
+2. **The decision rule:** Genie explains which combination of service failure, adverse rate gap, customer friction, and churn-risk tier warrants protection.
 3. **The cross-domain evidence:** a rate objection from sales, hold/abandon or repeat-contact signal from CX, verified runout/late delivery from operations, and rate gap/fee load from pricing.
 4. **The decision:** a ranked protect cohort and a can-raise cohort, with assumptions and synthetic fields labeled.
 
@@ -95,7 +95,7 @@ The instructions provide stable defaults, disjoint routing vocabulary, response 
 
 **Type:**
 
-> `For the top three Protect accounts, show the evidence chain in a compact table: account, recommendation, sales signal, CX signal, verified delivery event, pricing signal, and source status. If evidence is missing or only synthetic, say so rather than filling the gap.`
+> `For the top three accounts recommended for an exemption or reduced increase, show the evidence chain in a compact table: account, recommended pricing action, sales signal, CX signal, verified delivery event, pricing signal, and source status. If evidence is missing or synthetic, say so rather than filling the gap.`
 
 **Show:** Expand one row/source citation or the generated SQL lineage; do not narrate all three accounts.
 
@@ -109,7 +109,7 @@ The instructions provide stable defaults, disjoint routing vocabulary, response 
 
 From the **Genie One conversation**, type:
 
-> `Create a one-page document titled “NY/NJ Pricing Protection Brief.” Include the pricing objective from the cited Drive file, the Protect versus Can Raise summary, the top three Protect accounts with their evidence, recommended next actions, and a footer labeling synthetic and illustrative inputs. Keep it executive-ready and do not send it.`
+> `Create a one-page document titled “NY/NJ Price Increase Decision Brief.” Include the pricing objective from the cited Drive file, the account breakdown for exemption or reduced increase versus full increase, the top three accounts needing an exception with their evidence, recommended next actions, and a footer labeling synthetic and illustrative inputs. Keep it executive-ready and do not send it.`
 
 **Show:** The created document/canvas. Point to the title, recommendation table, Drive citation, and assumptions footer.
 
@@ -123,7 +123,7 @@ From the **Genie One conversation**, type:
 
 **Type:**
 
-> `Create a scheduled task for every Monday at 8:00 AM Eastern named “NY/NJ Pricing Protection Brief.” Refresh this analysis using the latest governed data and the same cited Drive policy, update the document, and notify me with the link. Do not send it to any other recipient.`
+> `Create a scheduled task for every Monday at 8:00 AM Eastern named “NY/NJ Price Increase Decision Brief.” Using the latest governed data and the current cited Drive policy, refresh which accounts warrant an exemption or reduced increase versus the full increase, update the document, and notify only me with the link.`
 
 **Show:** The task confirmation, schedule, timezone, inputs, and recipient. Stop after creation; do not edit settings live.
 
@@ -158,7 +158,7 @@ Then stop. Use remaining time as latency buffer or transition to Q&A.
 
 1. **Blocker query is slow:** open the pinned single-domain result and preserve time for the hero question.
 2. **Drive MCP or hero query is slow:** open the pinned hero result with its saved Drive citation; do not burn time rephrasing more than once.
-3. **Document creation is slow:** open the pre-created `NY/NJ Pricing Protection Brief`.
+3. **Document creation is slow:** open the pre-created `NY/NJ Price Increase Decision Brief`.
 4. **Task creation is unavailable:** show the pre-created paused task and its schedule; do not imply a new task was created live.
 
 ## Cut line if running late

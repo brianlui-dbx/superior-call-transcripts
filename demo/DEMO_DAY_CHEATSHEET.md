@@ -14,7 +14,7 @@ Show the ranked blockers, disposition split, and one quote. Keep this strictly s
 
 ### 1:50 — Question 2: cross-domain hero + Google Drive MCP
 
-> Using the Google Drive MCP, retrieve and cite the Google Doc titled "Superior Plus 2026 Pricing Plan (DEMO)" and use its pricing objective and customer-protection guardrails as context. Then determine which NY and NJ accounts we should protect before the next price action and which can absorb an increase. Work out a defensible definition of “protect,” explain it, rank the Protect accounts by contribution at risk, and support each recommendation with the strongest available evidence across sales objections, contact-center experience, delivery reliability, and pricing. Clearly distinguish verified facts, inferred recommendations, and synthetic or illustrative inputs. Do not search any other external source.
+> Use Google Drive to retrieve the “Superior Plus 2026 Pricing Plan (DEMO).” Based on that plan, which NY and NJ accounts should be exempted from or receive a reduced next price increase, and which can absorb the full increase? Rank the accounts needing protection by contribution at risk, and justify the decision with sales, CX, delivery, and pricing evidence. Cite the plan and label inferred or synthetic inputs.
 
 Expected anchors: **225 Protect / 66 Can Raise · 76 objection + service-failure accounts · ~$0.16 rate gap · ~$22 fee load · ~$134K contribution at risk.**
 
@@ -22,19 +22,19 @@ Say: “A price objection alone does not decide posture. A service failure alone
 
 ### 5:20 — Evidence drill-down
 
-> For the top three Protect accounts, show the evidence chain in a compact table: account, recommendation, sales signal, CX signal, verified delivery event, pricing signal, and source status. If evidence is missing or only synthetic, say so rather than filling the gap.
+> For the top three accounts recommended for an exemption or reduced increase, show the evidence chain in a compact table: account, recommended pricing action, sales signal, CX signal, verified delivery event, pricing signal, and source status. If evidence is missing or synthetic, say so rather than filling the gap.
 
 Open one citation only. Emphasize facts versus inference.
 
 ### 6:20 — Create the document
 
-> Create a one-page document titled “NY/NJ Pricing Protection Brief.” Include the pricing objective from the cited Drive file, the Protect versus Can Raise summary, the top three Protect accounts with their evidence, recommended next actions, and a footer labeling synthetic and illustrative inputs. Keep it executive-ready and do not send it.
+> Create a one-page document titled “NY/NJ Price Increase Decision Brief.” Include the pricing objective from the cited Drive file, the account breakdown for exemption or reduced increase versus full increase, the top three accounts needing an exception with their evidence, recommended next actions, and a footer labeling synthetic and illustrative inputs. Keep it executive-ready and do not send it.
 
 Show title, table, Drive citation, and assumptions footer.
 
 ### 7:35 — Schedule the task
 
-> Create a scheduled task for every Monday at 8:00 AM Eastern named “NY/NJ Pricing Protection Brief.” Refresh this analysis using the latest governed data and the same cited Drive policy, update the document, and notify me with the link. Do not send it to any other recipient.
+> Create a scheduled task for every Monday at 8:00 AM Eastern named “NY/NJ Price Increase Decision Brief.” Using the latest governed data and the current cited Drive policy, refresh which accounts warrant an exemption or reduced increase versus the full increase, update the document, and notify only me with the link.
 
 Show schedule, timezone, inputs, and sole recipient.
 
