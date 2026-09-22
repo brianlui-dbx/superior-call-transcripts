@@ -65,7 +65,7 @@ The instructions provide stable defaults, disjoint routing vocabulary, response 
 
 **Type:**
 
-> `Use Google Drive to retrieve the “Superior Plus 2026 Pricing Plan (DEMO).” Based on that plan, which NY and NJ accounts should be exempted from or receive a reduced next price increase, and which can absorb the full increase? Rank the accounts needing protection by contribution at risk, and justify the decision with sales, CX, delivery, and pricing evidence. Cite the plan and label inferred or synthetic inputs.`
+> `Use Google Drive to retrieve the “Superior Plus 2026 Pricing Plan (DEMO).” Based on that plan, which NY and NJ accounts should be exempted from or receive a reduced next price increase, and which can absorb the full increase? Rank the accounts needing protection by contribution at risk, and justify the decision with sales, CX, delivery, and pricing evidence. Cite the plan.`
 
 **While it plans, say:**
 
