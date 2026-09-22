@@ -15,11 +15,22 @@
 - [x] Verified visually: fonts correct, blue POC tags on all 4 shapes, ontology box contained, crisp
 - Output: docs/superior_arch_cio.png (627 KB)
 
-### Phase 2 — Native Google Slides rebuild (polished, editable)
-- [ ] Confirm target deck (existing URL or new) + Google auth
-- [ ] Recreate diagram as native Slides shapes + text via google-slides skill
-- [ ] Match Superior Plus brand (#174086 blue, #E21836 red, #FFCA37 yellow) + POC tags
-- [ ] Verify in-deck at present + zoom
+### Phase 2 — Native Google Slides rebuild (polished, editable) ✅ DONE
+- [x] New deck, Google auth via CLI path (gcloud ADC + quota project)
+- [x] Extracted exact DOM geometry from live Chrome (boxes/text/styles/graph) → docs/_arch_geom.json
+- [x] Built native slide with python-pptx (1 CSS px = 9144 EMU at 13.333×7.5"), brand fonts,
+      composited dark-row rgba to solid, synthesized 10 ontology connectors, embedded rasterized icons
+- [x] Uploaded PPTX to Drive WITH conversion → native, editable Google Slides (no image hosting needed)
+- [x] Thumbnail QA loop (4 passes): fixed Lakeflow icon overlap, single-line wrap (Superior badge),
+      source-pill dot overlap
+- Deck: https://docs.google.com/presentation/d/1-RdUmgf5LiS2VC08fR8lIHDYbs4IMjGoP55nNbqYjAA/edit
+- Source artifacts: docs/build_arch_pptx.py, docs/_arch_geom.json, docs/superior_arch_cio.pptx
 
 ## Review
-(to fill in)
+- PNG (Phase 1): docs/superior_arch_cio.png @ 3333×1875 via chrome-devtools MCP at 2.5× — crisp,
+  correct fonts, under Slides' downsample threshold. Drop-in image.
+- Native (Phase 2): editable Google Slides deck, vector-crisp at any zoom, on-brand fonts/colors.
+- Key learning: bigger PNG is WORSE in Slides (it downsamples >~4000px). SVG/PDF can't be inserted
+  as vectors; private Drive images can't be used by Slides createImage (needs public URL) — so the
+  PPTX→Drive-convert path (embeds images) is the right way to a native deck without violating the
+  no-public-sharing policy. Deck left private (not shared).

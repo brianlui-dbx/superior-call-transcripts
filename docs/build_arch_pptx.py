@@ -93,9 +93,22 @@ def T(t):
     txt = t["text"]
     if t.get("tt") == "uppercase":
         txt = txt.upper()
-    add_text_runs(t["x"], t["y"], t["w"], t["h"],
+    x, w = t["x"], t["w"]
+    # "Lakeflow pipelines" shares its flex row with the icon; shift past it
+    if txt == "Lakeflow pipelines":
+        x += 21; w -= 21
+    align = t.get("ta", "start")
+    wrap = t["h"] > 18
+    # source pills: the label's captured x is the pill edge; shift past the dot
+    if t["fw"] == "500":
+        x += 20; w -= 20; wrap = False
+    # Slides re-wraps to the box width on PPTX import; widen single-line
+    # left-aligned boxes so short labels can never break (extra width is empty).
+    if not wrap and align in ("start", "left"):
+        w += 240
+    add_text_runs(x, t["y"], w, t["h"],
                   [(txt, t["fs"], t["fw"], t["color"], t["ff"], t.get("italic", False))],
-                  align=t.get("ta", "start"))
+                  align=align, wrap=wrap)
 
 # ---- draw boxes (DOM/paint order) ----
 for b in GEOM["boxes"]:
@@ -175,10 +188,10 @@ kpi_labels = [t for t in GEOM["texts"] if abs(t["x"]-1195.5) < 1 and t["fs"] == 
 kpi_arrows = [t for t in GEOM["texts"] if t["fs"] == 11]
 for lab in kpi_labels:
     arr = min(kpi_arrows, key=lambda a: abs(a["y"]-lab["y"]))
-    add_text_runs(lab["x"], lab["y"], lab["w"], lab["h"], [
+    add_text_runs(lab["x"], lab["y"], lab["w"]+120, lab["h"], [
         (arr["text"] + " ", 11, 700, arr["color"], "Open Sans", False),
         (lab["text"], 10, 400, lab["color"], "Open Sans", False),
-    ], align="start")
+    ], align="start", wrap=False)
 for t in GEOM["texts"]:
     if t in kpi_labels or t in kpi_arrows:
         skip.add(GEOM["texts"].index(t))
@@ -188,11 +201,11 @@ for i, t in enumerate(GEOM["texts"]):
         continue
     T(t)
 
-# ontology node labels
-for lb in GEOM["svg"]["labels"]:
-    add_text_runs(lb["x"]-4, lb["y"], lb["w"]+8, lb["h"],
+# ontology node labels — center within the full node box so they never wrap
+for nd, lb in zip(GEOM["svg"]["nodes"], GEOM["svg"]["labels"]):
+    add_text_runs(nd["x"], lb["y"], nd["w"], lb["h"],
                   [(lb["text"], 9.5, 500, "rgba(255, 255, 255, 0.88)", "Open Sans", False)],
-                  align="center")
+                  align="center", wrap=False)
 
 out = os.path.join(HERE, "superior_arch_cio.pptx")
 prs.save(out)
