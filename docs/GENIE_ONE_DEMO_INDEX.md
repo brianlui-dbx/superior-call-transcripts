@@ -17,7 +17,7 @@ solution into a **multi-domain, native Genie One** demo anchored on a strategic 
 | You are… | Read, in order |
 |---|---|
 | **Exec / reviewer** (5 min) | [One-pager](genie_one_demo_onepager.html) → this index's *Solution at a glance* |
-| **Presenter** (demo day) | [Talk track](genie_one_demo_talktrack.md) → [Demo-day cheat-sheet](../superior-offer-blocker/genie_ext/DEMO_DAY_CHEATSHEET.html) |
+| **Presenter** (demo day) | [10-minute talk track](../demo/genie_one_demo_talktrack.md) → [10-minute demo-day cheat-sheet](../demo/DEMO_DAY_CHEATSHEET.md) |
 | **SA / builder** | [Implementation plan](genie_one_additive_implementation.md) → [Build tasks](genie_one_demo_build_tasks.md) → [genie_ext/README](../superior-offer-blocker/genie_ext/README.md) → [Deploy runbook](../superior-offer-blocker/genie_ext/DEPLOY_RUNBOOK.md) |
 
 ---
@@ -36,7 +36,9 @@ solution into a **multi-domain, native Genie One** demo anchored on a strategic 
 | File | What it is |
 |---|---|
 | [genie_one_demo_onepager.html](genie_one_demo_onepager.html) / [.md](genie_one_demo_onepager.md) | Slide-ready one-pager (open HTML → print landscape → PDF). |
-| [genie_one_demo_talktrack.md](genie_one_demo_talktrack.md) | Minute-by-minute 20-min talk track + query-to-Agent routing cheat-sheet. |
+| [genie_one_demo_talktrack.md](../demo/genie_one_demo_talktrack.md) | Minute-by-minute 10-min flow: Drive MCP, cross-domain reasoning, document creation, and scheduled task. |
+| [genie_workspace_instructions.md](../demo/genie_workspace_instructions.md) | Uploadable workspace instructions with direct routing, freshness, response, and action guardrails. |
+| [Superior_Plus_2026_Pricing_Plan_DEMO.md](../demo/Superior_Plus_2026_Pricing_Plan_DEMO.md) | Repo source for the synthetic pricing plan. Published as the Google Doc **Superior Plus 2026 Pricing Plan (DEMO)** ([link](https://docs.google.com/document/d/1FUk24Sb55As4WUOy9fe-cWFY_4noiwBGyRXZ9beISGs/edit)) for the Drive MCP retrieval beat. |
 | [genie_one_additive_implementation.md](genie_one_additive_implementation.md) | Additive, skill-aligned implementation plan (terminology, domains, phases). |
 | [genie_one_demo_build_tasks.md](genie_one_demo_build_tasks.md) | Phased build task list (earlier native-only version; superseded on specifics by the implementation plan). |
 
@@ -79,7 +81,7 @@ metadata needs **DBR 17.3+**. Validate live with `databricks genie ask`.
 **Complete & validated (static):** all data objects, 4 Agents (structure-checked), DAB resources,
 CLI fallback, and docs. **0 existing files modified.**
 **Yours to run (needs the live workspace — no CLI/warehouse access from the authoring env):**
-`bundle validate`, the four `bundle run`s, and rehearsing the 7 questions to pin routing.
+`bundle validate`, the four `bundle run`s, and rehearsing the 10-minute hero flow to pin routing and prepare fallbacks.
 
 ## Guardrails (carried across every artifact)
 Lost opportunity ≠ churn · transcript calls ≠ full contact population · a verified runout needs an

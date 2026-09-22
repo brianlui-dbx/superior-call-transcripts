@@ -1,79 +1,164 @@
-# Genie One — 20-Minute Demo Talk Track
-**Superior Plus Propane · Retention-Aware Pricing · Native Genie One over 5 curated Genie Agents**
+# Genie One — 10-Minute Demo Talk Track
 
-> Terminology per `databricks-agent-skills`: **Genie One** is the cross-data chat that **routes each question to the most relevant Genie Agent by its `description`**; the domains (CX, Delivery, Pricing, Retention, Offer Blocker) are curated **Genie Agents**. Native only — no Supervisor Agent / Agent Bricks.
+**Superior Plus Propane · Retention-aware pricing · Genie One over five curated Genie Agents**
 
-**Setup before you start:** one Genie One conversation, warehouse warm, demo snapshot frozen, labeled fallback screenshot ready for every typed query. On-screen banner: **Illustrative scenario · NY/NJ · USD/gallons · synthetic rows labeled.** Audience: VP Sales/Ops in the room, CFO-minded exec on the line.
-**Native routing rule enforced in the script:** every strategic/cross-domain question routes to the **Customer Retention Decision** Agent (over the governed `mv_retention` metric view, where the join is pre-computed). Single-domain questions route to their own Agent by description. No question relies on Genie live-joining two Agents.
+## The story in one sentence
 
----
+> Genie One turns an ambiguous pricing decision into an evidence-backed action by combining governed data across sales, service, delivery, and pricing, grounding it in a Google Drive document, and then creating and scheduling the deliverable.
 
-### 0:00–2:00 · The tension (no tool yet)
-**Say:** *"Your 2026 plan takes price to grow margin — and at the same time you're managing attrition and service pressure through the transformation. The danger is you take price on the exact accounts already wounded by a runout or a long call wait, and buy the increase back in churn. That decision lives in four systems today — CRM, the contact center, delivery, billing. Watch what happens when one Genie can see all four."* Show the 4-domain diagram for 20 seconds.
+This version deliberately uses only **two analytical turns**: one hero question and one evidence drill-down. Protect the cross-domain reveal; do not add the old seven-question tour back in.
 
-### 2:00–4:00 · Baseline on ground you already trust — *routes to the Offer Blocker Agent (existing, real)*
-**Type:** `Which offer blockers are driving the most Closed Lost opportunity value in New York and New Jersey, and how does rate competitiveness (4A) rank?`
-**Why it lands:** starts on the real, already-deployed Agent execs recognize. Establishes 4A (rate) as a top blocker → teases "so should we just cut price everywhere? No."
+## Pre-flight
 
-### 4:00–6:30 · Cross to service pain — *routes to the CX & Service Recovery Agent (real CXone fields, governed by mv_cx_service)*
-**Type:** `For opportunities in NY and NJ, show average hold time, abandon rate, and repeat-contact rate by region and team.`
-**Say aloud:** *"Different data domain — the contact center — same conversation. This is real data already in your call feed."* Reveals lost/at-risk accounts also had degraded service — first hint price isn't the whole story.
+- Start in a fresh Genie One conversation with the warehouse warm.
+- Confirm the **Google Drive MCP** connection is authorized and that the Google Doc **Superior Plus 2026 Pricing Plan (DEMO)** is in the connected Drive (https://docs.google.com/document/d/1FUk24Sb55As4WUOy9fe-cWFY_4noiwBGyRXZ9beISGs/edit).
+- Confirm **Documents** and **Scheduled tasks** are enabled for this workspace/user. These are Genie One capabilities; do not attempt them from inside a curated Genie Agent page.
+- Freeze the demo snapshot and keep the banner visible: **Illustrative scenario · NY/NJ · USD/gallons · synthetic rows labeled.**
+- Have four fallbacks ready: the Drive excerpt, hero-query result, finished document, and scheduled-task confirmation.
+- Use the validated snapshot as the expected result: 316 opportunities, 508 calls, 557 CX contacts, and 858 delivery orders.
 
-### 6:30–10:00 · THE REVEAL — *routes to the Customer Retention Decision Agent (mv_retention; join pre-computed)*
-**Type:** `List NY and NJ opportunities that have a rate objection (4A) AND a verified runout or late delivery in the last 90 days. Rank by opportunity value and show the churn-risk tier.`
-**Why it lands:** the payoff — **price shock stacked on a verified service failure = the churn bomb.** No single system answers it; the governed `mv_retention` metric view does. **Pause here.** Note: *"Genie answered this from one Agent because we pre-joined the domains into a governed metric view — that's how we keep it accurate, not a guess across silos."*
+### Workspace instructions
 
-### 10:00–13:00 · Quantify the price posture — *stays in Retention Decision Agent (or drill to Pricing Position Agent)*
-**Type:** `For those at-risk opportunities, how far above the competitor rate are we quoting, and what is their fee load?`
-**Why it lands:** shows *we're overpriced vs market on the very accounts we're also failing to serve* — the setup for the decision. (If asked for raw extraction detail, drill into the **Pricing Position** space.)
+Upload [`genie_workspace_instructions.md`](genie_workspace_instructions.md) to Genie One before rehearsing. The pricing policy lives in the Google Doc **Superior Plus 2026 Pricing Plan (DEMO)** (https://docs.google.com/document/d/1FUk24Sb55As4WUOy9fe-cWFY_4noiwBGyRXZ9beISGs/edit); keep [`Superior_Plus_2026_Pricing_Plan_DEMO.md`](Superior_Plus_2026_Pricing_Plan_DEMO.md) as the repo source of that doc's content.
 
-### 13:00–16:00 · THE DECISION — *Customer Retention Decision Agent*
-**Type:** `Split my NY and NJ book into two segments: accounts that can absorb a price increase — healthy CSAT, no runouts, small rate gap — versus accounts I must protect. Show the churn-risk tier and the evidence behind each.`
-**Say:** *"This is the retention-aware pricing call — a defensible raise list and a protect list, with cross-domain evidence behind every name — made in one question."*
+The instructions provide stable defaults, disjoint routing vocabulary, response formatting, and safe action behavior. They deliberately exclude the Protect/Can Raise rule, current counts, account lists, thresholds, and policy excerpts. Those must be reasoned over or retrieved fresh, preserving the demo's ambiguous-question moment.
 
-### 16:00–18:00 · Action — *reuses the follow-up-email capability, now cross-domain aware*
-**Type:** `Draft a retention-first outreach for the top 5 protect accounts, referencing the specific service issue (runout or late delivery) on each — review only, do not send.`
-**Why it lands:** closes insight → action using the asset already in the repo, now citing the runout, not just the objection. Shows Genie One drives work, not just charts.
+## Run of show
 
-### 18:00–20:00 · The CFO close — *Customer Retention Decision Agent (mv_retention scenario measures)*
-**Type:** `Using the illustrative 100,000-account scenario at $600 contribution per retained account and $150,000 program cost, show net annual contribution at 0.5, 1, and 2 points of churn reduction, and the break-even. Label every assumption.`
-**Expect:** ~**$150K / $450K / $1.05M**, break-even **0.25pt (250 accounts)**.
-**Close on:** *"Capture the pricing upside without buying it back in attrition — and prove every account decision across four domains, in one conversation. Can we nominate two districts, a Sales/Ops sponsor, and a Finance owner to pilot it with a fixed budget and agreed measurement?"*
-
----
-
-## Query-to-Agent routing cheat-sheet (rehearse these route correctly)
-Genie One routes by each Agent's `description` — vocabulary below is chosen to match one Agent's description unambiguously.
-| # | Time | Question intent | Routes to (Agent) |
-|---|---|---|---|
-| 1 | 2:00 | Blockers / Closed Lost value | Offer Blocker *(existing)* |
-| 2 | 4:00 | Hold/abandon/repeat by team | CX & Service Recovery |
-| 3 | 6:30 | 4A **+** verified runout (reveal) | **Customer Retention Decision** |
-| 4 | 10:00 | Rate gap + fee load | Retention Decision → drill Pricing Position |
-| 5 | 13:00 | Raise vs protect segmentation | **Customer Retention Decision** |
-| 6 | 16:00 | Retention-first outreach draft | Retention Decision |
-| 7 | 18:00 | $/churn-point sensitivity | **Customer Retention Decision** |
-
-## Validated live answers (run against the deployed workspace, 2026-09-21)
-Validated end-to-end on the production-scale dataset (**316 opportunities, 508 enriched calls, 557 CX contacts, 858 delivery orders**) in workspace `adb-7405615135791589`, catalog `brlui`. All 7 questions routed correctly and returned COMPLETED. Expected numbers to anticipate on stage:
-
-| # | Routed to | Live result to expect |
+| Time | Beat | What the audience should remember |
 |---|---|---|
-| 1 | Offer Blocker | 6 blockers ranked; **4A = 29 Closed-Lost opps in NY/NJ (2nd, just behind 4B=33)** — establishes rate as a top-2 blocker without being the whole story. |
-| 2 | CX & Service Recovery | 8 region×team rows; hold **23–102s**, abandon **1.6–18.5%** (NJ Inside Sales worst at 18.5%) — real service variation to point at. |
-| 3 | Customer Retention Decision | **The reveal: 76 accounts** with 4A **+** a verified runout/late delivery, all **High** tier; top opp values **$23,795 (NY) / $18,093 (NJ)**. |
-| 4 | Customer Retention Decision | At-risk NY/NJ quoted **~0.16 above competitor**, avg **fee load ~$22** (uses the added `Avg Fee Load` measure). |
-| 5 | Customer Retention Decision | Book splits **66 "Can Raise" vs 225 "Protect"** (NY+NJ); Can-Raise = low/med risk, negative rate gap, no failures; Protect = high risk, positive gap, failures. |
-| 6 | Customer Retention Decision | Top-5 Protect accounts by contribution at risk (**$20,809 / $15,614 / $13,117 / $13,012 / $11,027**), each with its primary blocker. |
-| 7 | Customer Retention Decision | Scenario: **$225K / $450K / $900K** net at 0.5/1/2 pts; **break-even 0.33pt**. (Measure returns $450K per full point; label all as illustrative, not booked EBITDA.) |
+| 0:00–0:45 | Frame the decision | A price increase is not one database question. |
+| 0:45–1:45 | Google Drive MCP | Genie can bring unstructured business context into the work. |
+| 1:45–5:15 | Cross-domain hero question | Genie resolves an ambiguous request across four governed domains. |
+| 5:15–6:30 | Evidence drill-down | The recommendation is inspectable, not a black box. |
+| 6:30–7:45 | Create a document | Analysis becomes a shareable executive artifact. |
+| 7:45–8:45 | Create a scheduled task | The work repeats without someone rebuilding it. |
+| 8:45–10:00 | Recap and close | Context → decision → artifact → recurring operating rhythm. |
 
-**Reveal-beat framing:** `Rate Objection And Failure` = **76** and `Contribution At Risk` (Protect) = **~$134K** across NY/NJ — say "76 accounts where a price objection sits on top of a verified service failure — that's the churn bomb."
+## Minute-by-minute talk track
 
-**Two rehearsal notes surfaced during validation:**
-- **Q1 ranks by opportunity count, not dollars.** `final_quoted_rate.amount` is sparse, so Genie ranks blockers by affected-opportunity count and may say "ranked equally" on value. Ask for it as *"which blockers affect the most Closed-Lost opportunities"* to get the clean 4B=33 / 4A=29 ordering, or accept the count framing. Don't promise a dollar ranking here.
-- **Q4 fee load** now resolves to the governed **`Avg Fee Load`** measure (added to `mv_retention` during validation). Before that fix Genie substituted `Avg Hold Seconds` — if you ever see hold-seconds reported as "fee load," the metric-views job didn't redeploy.
+### 0:00–0:45 — Frame the decision
 
-## Fallbacks & honesty
-- If a query mis-routes live: restate with the Agent's own description vocabulary (cheat-sheet), or open the pinned fallback result. Never hand-wave a wrong route.
-- Keep the labeled synthetic/illustrative banner visible. If asked "is this real data?" — CX + blocker signals are real from the call feed; delivery, fees, and contribution are synthetic and labeled; economics are an illustrative scenario, not booked EBITDA.
-- If pushed on a runout with no delivery record, the Delivery Agent answers **unverified** — show it; it builds trust with the ops leader.
+**Say:**
+
+> “Superior wants to grow margin through pricing without buying the increase back in churn. The hard question is not ‘who pays the most?’ It is ‘which accounts can absorb an increase, which should we protect, and why?’ Answering that spans CRM, contact-center experience, delivery reliability, pricing, and the current pricing policy.”
+
+> “I’ll ask that question the way an executive actually would—without specifying tables, joins, or even a precise definition of ‘protect.’”
+
+**Land:** This is intentionally complex and ambiguous, not a canned KPI lookup.
+
+### 0:45–1:45 — Bring in business context with one MCP
+
+**Type:**
+
+> `Using the Google Drive MCP, find the Google Doc titled "Superior Plus 2026 Pricing Plan (DEMO)". Pull the section that defines the 2026 pricing objective and any customer-protection guardrails. Use it as context for this conversation, and cite the file. Do not search any other external source.`
+
+**While it works, say:**
+
+> “The policy does not need to be copied into a prompt or ingested into a new pipeline. Genie One calls one governed tool—Google Drive—and brings the current business language into the analysis with its source attached.”
+
+**Show:** The file name, relevant excerpt, and citation. Do not read the whole document.
+
+**Land:** MCP supplies current unstructured context; Unity Catalog data supplies the governed facts. Be precise that Drive is context, not a fifth analytical table.
+
+### 1:45–5:15 — Ask one ambiguous, cross-domain hero question
+
+**Type:**
+
+> `Given that pricing objective, which NY and NJ accounts should we protect before the next price action, and which can absorb an increase? Work out a defensible definition of “protect,” explain it, rank the protect accounts by contribution at risk, and support each recommendation with the strongest available evidence across sales objections, contact-center experience, delivery reliability, and pricing. Clearly distinguish verified facts, inferred recommendations, and synthetic or illustrative inputs.`
+
+**While it plans, say:**
+
+> “I did not tell Genie what ‘protect’ means or which data to join. It has to turn an executive question into an analytical plan, route to the Customer Retention Decision Agent, and use the governed retention metric view that brings the four domains together at account grain.”
+
+**On the result, point out only three things:**
+
+1. **The interpretation:** Genie explains how it operationalized “protect”—for example, service failure, adverse rate gap, customer friction, and churn-risk tier.
+2. **The cross-domain evidence:** a rate objection from sales, hold/abandon or repeat-contact signal from CX, verified runout/late delivery from operations, and rate gap/fee load from pricing.
+3. **The decision:** a ranked protect cohort and a can-raise cohort, with assumptions and synthetic fields labeled.
+
+**Expected anchors from the validated snapshot:**
+
+- **225 Protect / 66 Can Raise** across NY and NJ.
+- **76 accounts** combine a 4A rate objection with a verified runout or late delivery.
+- The at-risk cohort is quoted about **$0.16 above competitor** with about **$22 average fee load**.
+- Protect contribution at risk is approximately **$134K** in this illustrative snapshot.
+
+**Say:**
+
+> “This is the cross-domain moment: a price objection alone does not tell us to protect an account, and a runout alone does not set price posture. The combination changes the decision. Genie makes the ambiguity explicit, then answers with evidence rather than hiding it.”
+
+**Land:** One conversation answers a decision no individual source can answer.
+
+### 5:15–6:30 — Drill into evidence, not another dashboard
+
+**Type:**
+
+> `For the top three Protect accounts, show the evidence chain in a compact table: account, recommendation, sales signal, CX signal, verified delivery event, pricing signal, and source status. If evidence is missing or only synthetic, say so rather than filling the gap.`
+
+**Show:** Expand one row/source citation or the generated SQL lineage; do not narrate all three accounts.
+
+**Say:**
+
+> “This is how we keep an agentic answer trustworthy. A recommendation remains separable from the facts behind it, missing evidence stays missing, and a delivery failure is called verified only when an operational record exists.”
+
+**Land:** Complex reasoning remains auditable.
+
+### 6:30–7:45 — Create one executive document
+
+From the **Genie One conversation**, type:
+
+> `Create a one-page document titled “NY/NJ Pricing Protection Brief.” Include the pricing objective from the cited Drive file, the Protect versus Can Raise summary, the top three Protect accounts with their evidence, recommended next actions, and a footer labeling synthetic and illustrative inputs. Keep it executive-ready and do not send it.`
+
+**Show:** The created document/canvas. Point to the title, recommendation table, Drive citation, and assumptions footer.
+
+**Say:**
+
+> “The answer is no longer trapped in chat. Genie has converted the analysis into a governed, shareable working document, with the source context and caveats carried forward.”
+
+**Land:** Analysis becomes a usable artifact without manual copy/paste.
+
+### 7:45–8:45 — Create one scheduled task
+
+**Type:**
+
+> `Create a scheduled task for every Monday at 8:00 AM Eastern named “NY/NJ Pricing Protection Brief.” Refresh this analysis using the latest governed data and the same cited Drive policy, update the document, and notify me with the link. Do not send it to any other recipient.`
+
+**Show:** The task confirmation, schedule, timezone, inputs, and recipient. Stop after creation; do not edit settings live.
+
+**Say:**
+
+> “This turns a one-time demo into an operating rhythm. Every Monday, the same governed question is refreshed against current data and the current policy, with a human still owning the resulting pricing decision.”
+
+**Land:** Scheduled tasks operationalize the insight; they do not automate the final business decision.
+
+### 8:45–10:00 — Recap and close
+
+**Say:**
+
+> “In under ten minutes, Genie One retrieved current policy through one MCP, resolved an ambiguous question across four governed data domains, exposed its evidence, created the executive brief, and scheduled the refresh.”
+
+> “The value is not another chatbot or dashboard. It is a governed path from scattered context to a repeatable decision. The next step is a two-district pilot with Sales/Ops and Finance agreeing on the protection rule and the outcome measure.”
+
+Then stop. Use remaining time as latency buffer or transition to Q&A.
+
+## Presenter guardrails
+
+- Do not run the former baseline, CX, price-posture, segmentation, outreach, and CFO questions separately. Their substance is now folded into the hero question.
+- Say **“pre-joined governed metric view”**, not “Genie dynamically joined five agents.” Genie One routes the cross-domain question to the Retention Agent; the reliable cross-domain join already exists in `mv_retention`.
+- Say **“Google Drive provides policy context”**, not “Drive data was ingested into Unity Catalog.”
+- Do not claim the system predicts churn. The tier is rule-based, and the recommendation is an inference.
+- Be explicit: blocker and CX signals are real; delivery, fees, contribution, and economics contain labeled synthetic/illustrative data.
+- If document creation or scheduling is unavailable in the workspace, show the pre-created artifact/confirmation and describe the capability. Do not attempt it inside a curated Agent page.
+- If asked why the workspace instructions help, say: **“They reduce repeated setup, routing ambiguity, and unnecessary agent fan-out; governed data and current policy are still retrieved fresh.”**
+
+## Fallback sequence
+
+1. **Drive MCP is slow:** open the saved excerpt and say it was retrieved in pre-flight through the same connection.
+2. **Hero query is slow or mis-routes:** open the pinned result; do not burn time rephrasing more than once.
+3. **Document creation is slow:** open the pre-created `NY/NJ Pricing Protection Brief`.
+4. **Task creation is unavailable:** show the pre-created paused task and its schedule; do not imply a new task was created live.
+
+## Cut line if running late
+
+At 7:30, stop analytical exploration. Show the pre-created document for 20 seconds, create/show the scheduled task, and deliver the close. Never cut the hero cross-domain question.

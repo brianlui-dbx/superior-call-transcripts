@@ -91,6 +91,9 @@ body {
 .cc.red-hi .cc-n { color:var(--sp-red); }
 .cc-icon { width:20px; height:20px; flex-shrink:0; }
 .cc-n { font-size:10.5px; font-weight:700; color:var(--db-navy); }
+.cc-n, .dp-n { display:flex; align-items:center; gap:6px; }
+.poc-tag { display:inline-block; box-sizing:border-box; flex:0 0 auto; height:14px; padding:0 5px; border:0; border-radius:2px; outline:0; box-shadow:none; background:var(--sp-blue); color:#fff; font-size:7px; font-weight:800; letter-spacing:.08em; line-height:14px; text-transform:uppercase; vertical-align:middle; white-space:nowrap; }
+.stag .poc-tag { margin-left:4px; }
 .cc-d { font-size:9px; color:var(--db-soft); margin-top:2px; line-height:1.3; }
 
 /* ── GENIE ONTOLOGY ──────────────────────────────────────── */
@@ -235,7 +238,7 @@ body {
         <div class="cc red-hi">
           <img class="cc-icon" src="genie-icon-full-color.svg" alt="" onerror="this.style.display='none'">
           <div>
-            <div class="cc-n">Genie One</div>
+            <div class="cc-n">Genie One <span class="poc-tag">POC</span></div>
             <div class="cc-d">AI coworker — ask questions and trigger actions using natural language</div>
           </div>
         </div>
@@ -327,7 +330,7 @@ body {
       </div>
       <div class="cnt">
         <div class="dp hub">
-          <div class="dp-n">Offer Blocker Intelligence</div>
+          <div class="dp-n">Offer Blocker Intelligence <span class="poc-tag">POC</span></div>
           <div class="dp-d">Blocker codes, dispositions, rates, follow-up emails</div>
         </div>
         <div class="dp">
@@ -390,7 +393,7 @@ body {
         <div class="fc wide">
           <div class="fc-lbl">
             <img class="fc-icon" src="lakeflow-icon-full-color.svg" alt="" onerror="this.style.display='none'">
-            Lakeflow pipelines
+            Lakeflow pipelines <span class="poc-tag">POC</span>
           </div>
           <div class="medaln">
             <span class="med b">Bronze</span><span class="med-a">→</span>
@@ -435,7 +438,7 @@ body {
         </div>
         <div class="src-group">
           <span class="src-plat">via AWS</span>
-          <span class="stag"><span class="sdot" style="background:#FF9900"></span>Call transcripts (NICE)</span>
+          <span class="stag"><span class="sdot" style="background:#FF9900"></span>Call transcripts (NICE)<span class="poc-tag">POC</span></span>
         </div>
       </div>
       <div class="kpi"></div>

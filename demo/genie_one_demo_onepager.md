@@ -33,7 +33,7 @@
 
 ---
 
-**20-MIN ARC:** Tension → win-loss baseline → service pain → **reveal (objection + runout)** → price posture → **raise-vs-protect list** → retention-first outreach → CFO close + **2-district pilot ask** (Sales/Ops sponsor + Finance owner + fixed budget + agreed measurement).
+**10-MIN ARC:** Tension → retrieve pricing policy through **Google Drive MCP** → one ambiguous **cross-domain Protect vs Can Raise** question → evidence drill-down → create the executive document → schedule its weekly refresh → **2-district pilot ask**.
 
 **IMPLEMENTATION:** ~10 working days, 6 phases. Two domains are **real today** — a two-space native Genie One survives even if time runs short.
 
