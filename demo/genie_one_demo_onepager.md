@@ -33,7 +33,7 @@
 
 ---
 
-**10-MIN ARC:** Tension → retrieve pricing policy through **Google Drive MCP** → one ambiguous **cross-domain Protect vs Can Raise** question → evidence drill-down → create the executive document → schedule its weekly refresh → **2-district pilot ask**.
+**10-MIN ARC:** Tension → focused **offer-blocker intelligence** → ambiguous **cross-domain Protect vs Can Raise** question grounded in the pricing plan through **Google Drive MCP** → evidence drill-down → create the executive document → schedule its weekly refresh → **2-district pilot ask**.
 
 **IMPLEMENTATION:** ~10 working days, 6 phases. Two domains are **real today** — a two-space native Genie One survives even if time runs short.
 

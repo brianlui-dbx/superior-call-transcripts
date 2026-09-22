@@ -36,7 +36,7 @@ solution into a **multi-domain, native Genie One** demo anchored on a strategic 
 | File | What it is |
 |---|---|
 | [genie_one_demo_onepager.html](genie_one_demo_onepager.html) / [.md](genie_one_demo_onepager.md) | Slide-ready one-pager (open HTML → print landscape → PDF). |
-| [genie_one_demo_talktrack.md](../demo/genie_one_demo_talktrack.md) | Minute-by-minute 10-min flow: Drive MCP, cross-domain reasoning, document creation, and scheduled task. |
+| [genie_one_demo_talktrack.md](../demo/genie_one_demo_talktrack.md) | Minute-by-minute 10-min flow: single-domain blocker intelligence, cross-domain reasoning with Drive context, document creation, and scheduled task. |
 | [genie_workspace_instructions.md](../demo/genie_workspace_instructions.md) | Uploadable workspace instructions with direct routing, freshness, response, and action guardrails. |
 | [Superior_Plus_2026_Pricing_Plan_DEMO.md](../demo/Superior_Plus_2026_Pricing_Plan_DEMO.md) | Repo source for the synthetic pricing plan. Published as the Google Doc **Superior Plus 2026 Pricing Plan (DEMO)** ([link](https://docs.google.com/document/d/1FUk24Sb55As4WUOy9fe-cWFY_4noiwBGyRXZ9beISGs/edit)) for the Drive MCP retrieval beat. |
 | [genie_one_additive_implementation.md](genie_one_additive_implementation.md) | Additive, skill-aligned implementation plan (terminology, domains, phases). |
