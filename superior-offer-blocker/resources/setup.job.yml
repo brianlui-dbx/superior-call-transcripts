@@ -3,9 +3,9 @@
 # pipeline. It creates the supporting objects that the pipeline reads but does
 # not own:
 #   * the two Unity Catalog Volumes (landing zone + seeds),
-#   * the sample transcript batch copied into the landing Volume (so Auto Loader
+#   * the sample transcript batches copied into the landing Volume (so Auto Loader
 #     has something to ingest),
-#   * dim_salesforce_opportunity  (synthetic CRM data — see the notebook),
+#   * dim_salesforce_opportunity  (CRM data from seeds/salesforce_opportunities.csv),
 #   * dim_code_categories         (the 4A-4F blocker-code catalog),
 #   * prompt_offer_blocker        (the 1-row table holding the large LLM prompt).
 # It is safe to re-run (idempotent: CREATE ... IF NOT EXISTS / overwrite).

@@ -13,12 +13,12 @@
 # MAGIC
 # MAGIC It creates:
 # MAGIC 1. A **Volume** — `landing` (where transcript files arrive for Auto Loader).
-# MAGIC 2. Copies the **sample transcript batch** into the landing Volume.
-# MAGIC 3. `dim_salesforce_opportunity` — **synthetic** CRM data. The real workflow joins
-# MAGIC    transcripts to Salesforce on phone number to learn each call's *opportunity*
-# MAGIC    (a sales deal) and its *stage*/*region*. Our sample transcripts have no such
-# MAGIC    fields, so we fabricate a small, deterministic Salesforce table keyed to the
-# MAGIC    phone numbers actually present in the sample.
+# MAGIC 2. Copies the **sample transcript batches** into the landing Volume.
+# MAGIC 3. `dim_salesforce_opportunity` — CRM data loaded from `seeds/salesforce_opportunities.csv`.
+# MAGIC    The real workflow joins transcripts to Salesforce on phone number to learn each
+# MAGIC    call's *opportunity* (a sales deal) and its *stage*/*region*. The seed holds the
+# MAGIC    real opportunity IDs (from the NY batch docs) and stages (from the "AI Output"
+# MAGIC    sheet), keyed to the synthetic phone numbers in the sample transcripts.
 # MAGIC 4. `lookup_qualifier_config` — per-code-prefix ai_classify labels & instructions for
 # MAGIC    the qualifier step in `gold_findings_raw`.
 
@@ -60,31 +60,32 @@ print("landing dir:", LANDING_DIR)
 
 # COMMAND ----------
 
-# MAGIC %md ## 2. Copy the sample transcript batch into the landing Volume
-# MAGIC The sample (`data/batch_b_ny_001.json`) is a JSON **array** of 19 call
-# MAGIC transcript records. Copying it here gives Auto Loader a file to ingest.
+# MAGIC %md ## 2. Copy the sample transcript batches into the landing Volume
+# MAGIC Each sample (`data/batch_b_ny_001.json` = 19 calls, `data/batch_b_ny_002.json` = 31 calls)
+# MAGIC is a JSON **array** of call transcript records. Copying them here gives Auto Loader
+# MAGIC files to ingest.
 
 # COMMAND ----------
 
 import shutil
-src_json = f"{FILES_PATH}/data/batch_b_ny_001.json"
-dst_json = f"{LANDING_DIR}/batch_b_ny_001.json"
-shutil.copyfile(src_json, dst_json)
-print(f"copied {src_json} -> {dst_json}  ({os.path.getsize(dst_json)} bytes)")
+BATCH_FILES = ["batch_b_ny_001.json", "batch_b_ny_002.json"]
+for name in BATCH_FILES:
+    src_json = f"{FILES_PATH}/data/{name}"
+    dst_json = f"{LANDING_DIR}/{name}"
+    shutil.copyfile(src_json, dst_json)
+    print(f"copied {src_json} -> {dst_json}  ({os.path.getsize(dst_json)} bytes)")
 
 # COMMAND ----------
 
-# MAGIC %md ## 3. Synthetic `dim_salesforce_opportunity`
-# MAGIC One row per phone number found in the sample. Each phone maps to exactly ONE
-# MAGIC opportunity (kept 1:1 so the phone-join doesn't multiply rows). We deliberately
-# MAGIC place a few opportunities OUT of the demo regions so you can see the region
-# MAGIC filter drop them. All values are deterministic (seeded by the phone) so re-runs
-# MAGIC are stable.
+# MAGIC %md ## 3. `dim_salesforce_opportunity`
+# MAGIC One row per phone number in the samples, loaded from `seeds/salesforce_opportunities.csv`.
+# MAGIC Each phone maps to exactly ONE opportunity (kept 1:1 so the phone-join doesn't
+# MAGIC multiply rows); an opportunity can have several phones. Stage is blank for
+# MAGIC opportunities that don't appear in the "AI Output" sheet.
 
 # COMMAND ----------
 
-import json, re, hashlib
-from datetime import datetime, timedelta
+import csv, json, re
 
 def normalize_phone(p: str) -> str:
     """Same rule the pipeline uses: strip non-digits; if >=11 digits keep last 10
@@ -96,35 +97,23 @@ def normalize_phone(p: str) -> str:
         digits = digits[-10:]
     return digits if len(digits) == 10 else ""
 
-# Read the raw sample directly in Python (small file) to collect the phone numbers.
-with open(src_json, "r", encoding="utf-8") as f:
-    records = json.load(f)
+# Read the raw samples directly in Python (small files) to collect the phone numbers.
+records = []
+for name in BATCH_FILES:
+    with open(f"{FILES_PATH}/data/{name}", "r", encoding="utf-8") as f:
+        records += json.load(f)
 
-phones = sorted({normalize_phone(r.get("clientPhoneNumber")) for r in records} - {""})
-print(f"{len(phones)} distinct usable phone numbers in the sample")
+phones = {normalize_phone(r.get("clientPhoneNumber")) for r in records} - {""}
+print(f"{len(phones)} distinct usable phone numbers in the samples")
 
-# Deterministic attribute assignment.
-STAGES = ["Open", "Closed Won", "Closed Lost"]
-IN_REGIONS = ["New York", "New Jersey"]
-OUT_REGIONS = ["Ontario", "Massachusetts", "Connecticut"]  # excluded by the region filter
+with open(f"{FILES_PATH}/seeds/salesforce_opportunities.csv", newline="", encoding="utf-8") as f:
+    seed = list(csv.DictReader(f))
 
-def sf_opp_id(phone: str) -> str:
-    """Fabricate a realistic-looking 18-char Salesforce Opportunity ID from the phone."""
-    h = hashlib.md5(phone.encode()).hexdigest().upper()
-    body = "".join(c for c in h if c.isalnum())[:8]
-    return ("006Rg00000" + body)[:18].ljust(18, "0")
-
-rows = []
-n = len(phones)
-for i, phone in enumerate(phones):
-    # Put the LAST 3 phones out-of-region to prove the filter works; the rest in NY/NJ.
-    if i >= n - 3:
-        region = OUT_REGIONS[i % len(OUT_REGIONS)]
-    else:
-        region = IN_REGIONS[i % len(IN_REGIONS)]
-    stage = STAGES[i % len(STAGES)] if i % 4 != 3 else "Closed Won"  # bias toward Open/Closed Won
-    created = (datetime(2026, 3, 1) + timedelta(days=(i * 3) % 40)).strftime("%Y-%m-%d %H:%M:%S")
-    rows.append((phone, sf_opp_id(phone), stage, region, created))
+rows = [(r["contact_phone"], r["opportunity_id"], r["stage_name"] or None, r["region"], r["created_datetime"])
+        for r in seed]
+missing = phones - {r[0] for r in rows}
+if missing:
+    print(f"WARNING: {len(missing)} phone(s) have no opportunity in the seed and will be dropped by the join: {sorted(missing)}")
 
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
 from pyspark.sql import functions as F

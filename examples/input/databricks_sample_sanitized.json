@@ -59,7 +59,7 @@
     "acdContactId": "699970194707",
     "acdSessionId": "699970028884",
     "agentContactId": "699970194707",
-    "agentName": "Denise Cain",
+    "agentName": "[NAME]",
     "agentRecordingId": "6c625411-860d-40ad-95b2-0168b9db9c28",
     "agentStreamId": "0",
     "agentUserId": "11ef0f1a-030d-ff30-9383-0242ac110002",
@@ -67,9 +67,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (212) 619-2856",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (212) 619-2856",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "6c625411-860d-40ad-95b2-0168b9db9c28",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -104,7 +104,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-17T15:28:04.327Z",
-    "agentInfo": "43845465: Denise Cain",
+    "agentInfo": "43845465: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-17T16:07:12Z",
     "agentContactUuid": "966a5702-d27a-4007-bbc9-eba458ede928",
@@ -136,7 +136,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Um. My name is Beth Ross and I just talked to someone about getting the time change for. My February 15. A visit. Site, business."
+          "text": "Um. My name is [NAME] and I just talked to someone about getting the time change for. My [MASKED]. A visit. Site, business."
         },
         {
           "channelName": "AGENT",
@@ -176,7 +176,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Daniel."
+          "text": "[MASKED]."
         },
         {
           "channelName": "AGENT",
@@ -261,7 +261,7 @@
     "acdContactId": "699970029752",
     "acdSessionId": "699970024131",
     "agentContactId": "699970029752",
-    "agentName": "Robert Torres",
+    "agentName": "[NAME]",
     "agentRecordingId": "751803aa-ed82-4ded-9a5d-338bc87ff2c9",
     "agentStreamId": "0",
     "agentUserId": "11ef58c0-9c52-7730-beb3-0242ac110003",
@@ -269,9 +269,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (315) 762-4915",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (315) 762-4915",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "751803aa-ed82-4ded-9a5d-338bc87ff2c9",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -306,7 +306,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-17T12:18:51.312Z",
-    "agentInfo": "43975500: Robert Torres",
+    "agentInfo": "43975500: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-17T12:43:06Z",
     "agentContactUuid": "cbc605de-ebd7-4c70-b99f-0c34a1b52eb2",
@@ -338,7 +338,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Um. Hi. <unk>. My. Name's. Ryan Warner. I. I. Signed. Up. With you guys like probably four days ago now and I had a. Signer state before that and I I was still using their propane tanks. I was just basically like calling and getting different prices and I like your guys prices better so I moved"
+          "text": "Um. Hi. <unk>. My. Name's. [NAME]. I. I. Signed. Up. With you guys like probably four days ago now and I had a. Signer state before that and I I was still using their propane tanks. I was just basically like calling and getting different prices and I like your guys prices better so I moved"
         },
         {
           "channelName": "AGENT",
@@ -422,11 +422,11 @@
         },
         {
           "channelName": "AGENT",
-          "text": "was the address that this was for. Robert Torres."
+          "text": "was the address that this was for. [NAME]."
         },
         {
           "channelName": "CLIENT",
-          "text": "It's seventy two, seventy three. 754 Elliott Ways Apt. 697 it's a, 754 Elliott Ways Apt. 697 new york."
+          "text": "It's seventy two, seventy three. [Address] it's a, [Address] new york."
         },
         {
           "channelName": "AGENT",
@@ -438,7 +438,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Oh ok just bear with me here, a moment. Hi Robert Torres sorry about that long hold um I"
+          "text": "Oh ok just bear with me here, a moment. Hi [NAME] sorry about that long hold um I"
         },
         {
           "channelName": "CLIENT",
@@ -583,7 +583,7 @@
     "acdContactId": "699698406887",
     "acdSessionId": "699698065487",
     "agentContactId": "699698406887",
-    "agentName": "Denise Cain",
+    "agentName": "[NAME]",
     "agentRecordingId": "8371a6d1-e22d-4ef8-8be7-07c5a2842ae3",
     "agentStreamId": "0",
     "agentUserId": "11ef0f1a-030d-ff30-9383-0242ac110002",
@@ -591,9 +591,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (347) 785-4571",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (347) 785-4571",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "8371a6d1-e22d-4ef8-8be7-07c5a2842ae3",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -628,7 +628,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-13T17:14:49.497Z",
-    "agentInfo": "43845465: Denise Cain",
+    "agentInfo": "43845465: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-13T18:55:56Z",
     "agentContactUuid": "bbf41e9d-391f-4735-8422-07fe0c8ba484",
@@ -676,7 +676,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "able to Jill Fox"
+          "text": "able to [NAME]"
         },
         {
           "channelName": "AGENT",
@@ -753,7 +753,7 @@
     "acdContactId": "701092243397",
     "acdSessionId": "701092214971",
     "agentContactId": "701092243397",
-    "agentName": "Jason Gonzalez",
+    "agentName": "[NAME]",
     "agentRecordingId": "cfc5d7ae-0c30-407f-bcc0-3dda474adf29",
     "agentStreamId": "0",
     "agentUserId": "11ef4f38-d422-d470-adfd-0242ac110003",
@@ -761,9 +761,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (516) 512-5049",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (516) 512-5049",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "cfc5d7ae-0c30-407f-bcc0-3dda474adf29",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -798,7 +798,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-29T20:31:38.870Z",
-    "agentInfo": "43975389: Jason Gonzalez",
+    "agentInfo": "43975389: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-29T20:50:02Z",
     "agentContactUuid": "a98020fa-67cc-4eb4-9ae3-d98bcb3f7876",
@@ -818,11 +818,11 @@
       "transcriptBlock": [
         {
           "channelName": "CLIENT",
-          "text": "Your call has been forwarded to an automated voice messaging system +1 (516) 512-5049. Is not available. At the tone, please record your message, when you finished recording you may hang up or press one for. More options to leave, a, call back, number press five. Oh."
+          "text": "Your call has been forwarded to an automated voice messaging system [MASKED]. Is not available. At the tone, please record your message, when you finished recording you may hang up or press one for. More options to leave, a, call back, number press five. Oh."
         },
         {
           "channelName": "AGENT",
-          "text": "Hello good afternoon this is Jason Gonzalez calling you from superior plus pertains, just just a. Follow up call to see if you're still interested in our plane service if you are please give us a call back, at eight o +1 (800) 555-0100 oh i'll repeat that phone number for. You +1 (800) 555-0100 oh. Thank you very much for. Listening and please. Take care bye bye."
+          "text": "Hello good afternoon this is [NAME] calling you from superior plus pertains, just just a. Follow up call to see if you're still interested in our plane service if you are please give us a call back, at eight o [MASKED] oh i'll repeat that phone number for. You [MASKED] oh. Thank you very much for. Listening and please. Take care bye bye."
         }
       ]
     }
@@ -887,7 +887,7 @@
     "acdContactId": "699698561744",
     "acdSessionId": "699698080453",
     "agentContactId": "699698561744",
-    "agentName": "Joshua Harvey MD",
+    "agentName": "[NAME]",
     "agentRecordingId": "14d1ec86-74fe-4701-87ca-bbffcf8b6e91",
     "agentStreamId": "0",
     "agentUserId": "11ef0f1a-007f-8c20-9383-0242ac110002",
@@ -895,9 +895,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (518) 328-4498",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (518) 328-4498",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "14d1ec86-74fe-4701-87ca-bbffcf8b6e91",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -932,7 +932,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-13T19:27:10.530Z",
-    "agentInfo": "43845461: Joshua Harvey MD",
+    "agentInfo": "43845461: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-13T22:13:00Z",
     "agentContactUuid": "24fcf83c-a530-451f-a82e-e7d109dda58d",
@@ -964,7 +964,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "that says Joshua Harvey MD calling you from sales line um I got your request. We were told that you're potentially"
+          "text": "that says [NAME] calling you from sales line um I got your request. We were told that you're potentially"
         },
         {
           "channelName": "CLIENT",
@@ -1064,7 +1064,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Shelly."
+          "text": "[MASKED]."
         },
         {
           "channelName": "AGENT",
@@ -1072,7 +1072,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "53855 Nelson Junction Apt. 889"
+          "text": "[Address]"
         },
         {
           "channelName": "AGENT",
@@ -1256,11 +1256,11 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "okay, the 53855 Nelson Junction Apt. 889 is like the same street I live um on"
+          "text": "okay, the [Address] is like the same street I live um on"
         },
         {
           "channelName": "AGENT",
-          "text": "i'm not 53855 Nelson Junction Apt. 889 but the oak"
+          "text": "i'm not [Address] but the oak"
         },
         {
           "channelName": "CLIENT",
@@ -1276,7 +1276,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "I think it's on the 53855 Nelson Junction Apt. 889"
+          "text": "I think it's on the [Address]"
         },
         {
           "channelName": "CLIENT",
@@ -1560,7 +1560,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Jennifer"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -1588,7 +1588,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "you're looking at Jeffrey"
+          "text": "you're looking at [MASKED]"
         },
         {
           "channelName": "CLIENT",
@@ -1636,7 +1636,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "uh no installation. Is a, 2,150 dollars"
+          "text": "uh no installation. Is a, [MASKED] dollars"
         },
         {
           "channelName": "CLIENT",
@@ -2244,7 +2244,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Joshua Harvey MD"
+          "text": "[NAME]"
         },
         {
           "channelName": "CLIENT",
@@ -2364,7 +2364,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Joshua Harvey MD"
+          "text": "[NAME]"
         },
         {
           "channelName": "CLIENT",
@@ -2501,7 +2501,7 @@
     "acdContactId": "699698281101",
     "acdSessionId": "699698061727",
     "agentContactId": "699698281101",
-    "agentName": "Robert Torres",
+    "agentName": "[NAME]",
     "agentRecordingId": "126ac24f-b83f-449b-a9a2-049863e2c414",
     "agentStreamId": "0",
     "agentUserId": "11ef58c0-9c52-7730-beb3-0242ac110003",
@@ -2509,9 +2509,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (585) 979-5671",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (585) 979-5671",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "126ac24f-b83f-449b-a9a2-049863e2c414",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -2546,7 +2546,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-13T16:04:53.538Z",
-    "agentInfo": "43975500: Robert Torres",
+    "agentInfo": "43975500: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-13T17:07:26Z",
     "agentContactUuid": "712886eb-b32c-4f09-8093-27459ba13efa",
@@ -2570,7 +2570,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Hi. My name is Abigail Stokes I live in 9358 Lewis Hills Apt. 158 and i've been noticing. I've been here for. Probably about nine years and I noticed your truck going up and down seventeen so I was able to stop um and talked to one of. The drivers when he was parked for. A, few minutes over by the store and he gave me your phone number but I lost it and it was the one that delivers in my area so I said, well, i'm gonna call and then I lost the number so i'm just calling"
+          "text": "Hi. My name is [NAME] I live in [Address] and i've been noticing. I've been here for. Probably about nine years and I noticed your truck going up and down seventeen so I was able to stop um and talked to one of. The drivers when he was parked for. A, few minutes over by the store and he gave me your phone number but I lost it and it was the one that delivers in my area so I said, well, i'm gonna call and then I lost the number so i'm just calling"
         },
         {
           "channelName": "AGENT",
@@ -2658,7 +2658,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "9358 Lewis Hills Apt. 158 i'm only like three miles from 9358 Lewis Hills Apt. 158 i'm just before the bridge just before out of, the um um the bridge like 9358 Lewis Hills Apt. 158"
+          "text": "[Address] i'm only like three miles from [Address] i'm just before the bridge just before out of, the um um the bridge like [Address]"
         },
         {
           "channelName": "AGENT",
@@ -2670,15 +2670,15 @@
         },
         {
           "channelName": "AGENT",
-          "text": "google maps, so is it i've got 9358 Lewis Hills Apt. 158 or 9358 Lewis Hills Apt. 158"
+          "text": "google maps, so is it i've got [Address] or [Address]"
         },
         {
           "channelName": "CLIENT",
-          "text": "no it's 4457 route 9358 Lewis Hills Apt. 158"
+          "text": "no it's [MASKED] route [Address]"
         },
         {
           "channelName": "AGENT",
-          "text": "oh? okay, sorry 5505 route seventeen west you"
+          "text": "oh? okay, sorry [MASKED] route seventeen west you"
         },
         {
           "channelName": "CLIENT",
@@ -2702,11 +2702,11 @@
         },
         {
           "channelName": "AGENT",
-          "text": "lot better. Sorry huh. I missed some of the address the zip is 13762"
+          "text": "lot better. Sorry huh. I missed some of the address the zip is [MASKED]"
         },
         {
           "channelName": "CLIENT",
-          "text": "yes 'cause 9358 Lewis Hills Apt. 158 too small for. The post office"
+          "text": "yes 'cause [Address] too small for. The post office"
         },
         {
           "channelName": "AGENT",
@@ -2738,7 +2738,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "<unk> down in 9358 Lewis Hills Apt. 158 so I bought"
+          "text": "<unk> down in [Address] so I bought"
         },
         {
           "channelName": "AGENT",
@@ -2870,7 +2870,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "um so, they have a, different type of valve then um the normal the tanks, that truck's Robert Torres,"
+          "text": "um so, they have a, different type of valve then um the normal the tanks, that truck's [NAME],"
         },
         {
           "channelName": "CLIENT",
@@ -2934,11 +2934,11 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Yeah, yeah, like if you can move, it it's not, the 362."
+          "text": "Yeah, yeah, like if you can move, it it's not, the [MASKED]."
         },
         {
           "channelName": "CLIENT",
-          "text": "yeah, my neighbor's got uh Melinda it's a lot I call. It a pot belly 'cause not too tall but it's really wide"
+          "text": "yeah, my neighbor's got uh [MASKED] it's a lot I call. It a pot belly 'cause not too tall but it's really wide"
         },
         {
           "channelName": "AGENT",
@@ -3118,7 +3118,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "so for. Us to install the standard installation is 2,500 dollars for. Us to install a, bigger tank um but the stoles on average use about twenty five gallons a, year um so you would be looking at probably a. Seventy dollar oh no that doesn't apply to you let me just double. Check here because you're in"
+          "text": "so for. Us to install the standard installation is [MASKED] dollars for. Us to install a, bigger tank um but the stoles on average use about twenty five gallons a, year um so you would be looking at probably a. Seventy dollar oh no that doesn't apply to you let me just double. Check here because you're in"
         },
         {
           "channelName": "CLIENT",
@@ -3178,7 +3178,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Lisa"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -3658,7 +3658,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "my first name is <unk> Matthew and my last name is Abigail Stokes Mary"
+          "text": "my first name is <unk> [MASKED] and my last name is [NAME] [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -3666,7 +3666,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Tiffany"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -4283,7 +4283,7 @@
     "acdContactId": "699698222336",
     "acdSessionId": "699698080892",
     "agentContactId": "699698222336",
-    "agentName": "Brian Conner",
+    "agentName": "[NAME]",
     "agentRecordingId": "e46bb39b-7151-4ed6-8bab-b02adf4f3d6b",
     "agentStreamId": "0",
     "agentUserId": "11ef0f1a-01f6-c2d0-9383-0242ac110002",
@@ -4291,9 +4291,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (607) 432-8799",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (607) 432-8799",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "e46bb39b-7151-4ed6-8bab-b02adf4f3d6b",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -4328,7 +4328,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-13T15:22:18.097Z",
-    "agentInfo": "43845464: Brian Conner",
+    "agentInfo": "43845464: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-13T16:19:53Z",
     "agentContactUuid": "97f167f7-9793-455c-8066-64148a833622",
@@ -4348,11 +4348,11 @@
       "transcriptBlock": [
         {
           "channelName": "AGENT",
-          "text": "Thanks. For calling residential sales. This is Brian Conner speaking. How, can I help you"
+          "text": "Thanks. For calling residential sales. This is [NAME] speaking. How, can I help you"
         },
         {
           "channelName": "CLIENT",
-          "text": "Hey. Richard Perry. This. Is. Richard Perry. I was looking at a. I don't know, what your price and a. Propane is now my my neighbor gets it Richard Perry and and they they use use. My driveway to fill it up because"
+          "text": "Hey. [NAME]. This. Is. [NAME]. I was looking at a. I don't know, what your price and a. Propane is now my my neighbor gets it [NAME] and and they they use use. My driveway to fill it up because"
         },
         {
           "channelName": "AGENT",
@@ -4368,7 +4368,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "uh so and then Richard Perry below so is my my another another neighbor, that uses your service so"
+          "text": "uh so and then [NAME] below so is my my another another neighbor, that uses your service so"
         },
         {
           "channelName": "AGENT",
@@ -4552,15 +4552,15 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "first name is Richard Perry last name is Richard Perry"
+          "text": "first name is [NAME] last name is [NAME]"
         },
         {
           "channelName": "AGENT",
-          "text": "is it Brian Conner with Brian"
+          "text": "is it [NAME] with [MASKED]"
         },
         {
           "channelName": "CLIENT",
-          "text": "Dylan yes"
+          "text": "[MASKED] yes"
         },
         {
           "channelName": "AGENT",
@@ -4568,7 +4568,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "8676 2535 Adams Plains 2535 Adams Plains now, they might it was 9411 2535 Adams Plains but I believe 2535 Adams Plains was gonna get it I think that's what you're what Richard Perry Richard Perry has his on in a. Richard Perry we're"
+          "text": "[MASKED] [Address] [Address] now, they might it was [MASKED] [Address] but I believe [Address] was gonna get it I think that's what you're what [NAME] [NAME] has his on in a. [NAME] we're"
         },
         {
           "channelName": "AGENT",
@@ -4600,15 +4600,15 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Marcia"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
-          "text": "and you said it was 2535 Adams Plains 7548"
+          "text": "and you said it was [Address] [MASKED]"
         },
         {
           "channelName": "CLIENT",
-          "text": "2535 Adams Plains 2362"
+          "text": "[Address] [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -4620,7 +4620,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "ok <unk> 2535 Adams Plains"
+          "text": "ok <unk> [Address]"
         },
         {
           "channelName": "CLIENT",
@@ -4632,7 +4632,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "feel Richard Perry Ronald or Richard Perry <unk>"
+          "text": "feel [NAME] [MASKED] or [NAME] <unk>"
         },
         {
           "channelName": "AGENT",
@@ -4640,7 +4640,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Sheryl believe i'm not really sure I could look, at a, bite, i, just don't know."
+          "text": "[MASKED] believe i'm not really sure I could look, at a, bite, i, just don't know."
         },
         {
           "channelName": "AGENT",
@@ -4652,7 +4652,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "okay, they have, it um as 2535 Adams Plains"
+          "text": "okay, they have, it um as [Address]"
         },
         {
           "channelName": "CLIENT",
@@ -4668,11 +4668,11 @@
         },
         {
           "channelName": "AGENT",
-          "text": "in 2535 Adams Plains"
+          "text": "in [Address]"
         },
         {
           "channelName": "CLIENT",
-          "text": "ok that's that well, i'm on the same road i'm on the same road is Richard Perry's at the end of the road i'm i, they actually come to my house to fill pincers up because fencers where they got their tank. They can't get added in the winter time so i. Keep it open form so, they can get down"
+          "text": "ok that's that well, i'm on the same road i'm on the same road is [NAME]'s at the end of the road i'm i, they actually come to my house to fill pincers up because fencers where they got their tank. They can't get added in the winter time so i. Keep it open form so, they can get down"
         },
         {
           "channelName": "AGENT",
@@ -4872,7 +4872,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "those thanks uh they Richard Perry mine four or four times and they were"
+          "text": "those thanks uh they [NAME] mine four or four times and they were"
         },
         {
           "channelName": "AGENT",
@@ -5216,7 +5216,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "said Connie often beginning of five hundred"
+          "text": "said [MASKED] often beginning of five hundred"
         },
         {
           "channelName": "AGENT",
@@ -5236,7 +5236,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "would get the two fifty to start um and then at the one year anniversary. You get the $350 credit."
+          "text": "would get the two fifty to start um and then at the one year anniversary. You get the [MASKED] credit."
         },
         {
           "channelName": "CLIENT",
@@ -5328,7 +5328,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Yeah, ok i, well, I I know, Richard Perry I i've actually I actually had his paper. It was one ninety nine so,"
+          "text": "Yeah, ok i, well, I I know, [NAME] I i've actually I actually had his paper. It was one ninety nine so,"
         },
         {
           "channelName": "AGENT",
@@ -5336,7 +5336,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "yeah, 'cause he uses a lot 'cause he's a. He raises bs so he's in 2535 Adams Plains"
+          "text": "yeah, 'cause he uses a lot 'cause he's a. He raises bs so he's in [Address]"
         },
         {
           "channelName": "AGENT",
@@ -5780,7 +5780,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Brian Conner."
+          "text": "[NAME]."
         },
         {
           "channelName": "CLIENT",
@@ -5792,7 +5792,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Richard Perry"
+          "text": "[NAME]"
         },
         {
           "channelName": "AGENT",
@@ -5824,7 +5824,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "the street and they don't bother to Richard Perry mine then I have to call in the next week and tell them look, at mine down below"
+          "text": "the street and they don't bother to [NAME] mine then I have to call in the next week and tell them look, at mine down below"
         },
         {
           "channelName": "AGENT",
@@ -5848,7 +5848,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "and that's, what happens with them. I mean they whoever's doing they're there their timing or for. Richard Perry so yes. It would"
+          "text": "and that's, what happens with them. I mean they whoever's doing they're there their timing or for. [NAME] so yes. It would"
         },
         {
           "channelName": "AGENT",
@@ -6744,7 +6744,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "yes Stephanie"
+          "text": "yes [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -6752,7 +6752,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "o o d. The number to the letter u e, Z you telling mobile I got Adriana should have the other, one I do have."
+          "text": "o o d. The number to the letter u e, [MASKED] you telling mobile I got [MASKED] should have the other, one I do have."
         },
         {
           "channelName": "AGENT",
@@ -6776,7 +6776,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Meghan so it's g"
+          "text": "[MASKED] so it's g"
         },
         {
           "channelName": "AGENT",
@@ -6784,11 +6784,11 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Jose good to you"
+          "text": "[MASKED] good to you"
         },
         {
           "channelName": "AGENT",
-          "text": "and it's 79"
+          "text": "and it's [MASKED]"
         },
         {
           "channelName": "CLIENT",
@@ -6832,7 +6832,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Maria"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -6840,7 +6840,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "it's a Richard Perry Alice"
+          "text": "it's a [NAME] [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -6848,7 +6848,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Richard Perry"
+          "text": "[NAME]"
         },
         {
           "channelName": "AGENT",
@@ -6856,7 +6856,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "a, 7611."
+          "text": "a, [MASKED]."
         },
         {
           "channelName": "AGENT",
@@ -6908,7 +6908,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "all right perfect well, thanks so much for calling today Brian Conner and if. Yeah, your if your son wants to switch over, as well by all"
+          "text": "all right perfect well, thanks so much for calling today [NAME] and if. Yeah, your if your son wants to switch over, as well by all"
         },
         {
           "channelName": "CLIENT",
@@ -6924,7 +6924,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Yep and you can ask him. That if he wants to ask for. Me my name's Brian Conner"
+          "text": "Yep and you can ask him. That if he wants to ask for. Me my name's [NAME]"
         },
         {
           "channelName": "CLIENT",
@@ -6936,7 +6936,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Richard Perry and that, then that the number I called is I i'll have to look and see on the phone but i'll write that down and tell"
+          "text": "[NAME] and that, then that the number I called is I i'll have to look and see on the phone but i'll write that down and tell"
         },
         {
           "channelName": "AGENT",
@@ -6964,11 +6964,11 @@
         },
         {
           "channelName": "AGENT",
-          "text": "um I don't know, what you dial but, you can always call +1 (800) 555-0100"
+          "text": "um I don't know, what you dial but, you can always call [MASKED]"
         },
         {
           "channelName": "CLIENT",
-          "text": "okay Anthony"
+          "text": "okay [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -6988,7 +6988,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "and then just ask for. Brian Conner"
+          "text": "and then just ask for. [NAME]"
         },
         {
           "channelName": "CLIENT",
@@ -7400,7 +7400,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "you too thank you Richard Perry"
+          "text": "you too thank you [NAME]"
         },
         {
           "channelName": "AGENT",
@@ -7497,7 +7497,7 @@
     "acdContactId": "699698162024",
     "acdSessionId": "699698080453",
     "agentContactId": "699698164396",
-    "agentName": "Joshua Harvey MD",
+    "agentName": "[NAME]",
     "agentRecordingId": "1b756307-b106-4157-9db0-1e5f8890ed55",
     "agentStreamId": "0",
     "agentUserId": "11ef0f1a-007f-8c20-9383-0242ac110002",
@@ -7505,9 +7505,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (518) 328-4498",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (518) 328-4498",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "1b756307-b106-4157-9db0-1e5f8890ed55",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -7542,7 +7542,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-13T14:13:12.779Z",
-    "agentInfo": "43845461: Joshua Harvey MD",
+    "agentInfo": "43845461: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-13T14:45:34Z",
     "agentContactUuid": "5ce67900-a8aa-4ee2-b22c-c51f23594b9f",
@@ -7606,7 +7606,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "oh thirty four oh route 5831"
+          "text": "oh thirty four oh route [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -7614,7 +7614,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "53855 Nelson Junction Apt. 889"
+          "text": "[Address]"
         },
         {
           "channelName": "AGENT",
@@ -7634,7 +7634,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "old route 9752"
+          "text": "old route [MASKED]"
         },
         {
           "channelName": "CLIENT",
@@ -7662,7 +7662,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "i'm in a, 53855 Nelson Junction Apt. 889"
+          "text": "i'm in a, [Address]"
         },
         {
           "channelName": "AGENT",
@@ -7698,11 +7698,11 @@
         },
         {
           "channelName": "AGENT",
-          "text": "cut off when you were giving me the full address. You said. Thirty four and I caught all. The route 3353 that's not correct right"
+          "text": "cut off when you were giving me the full address. You said. Thirty four and I caught all. The route [MASKED] that's not correct right"
         },
         {
           "channelName": "CLIENT",
-          "text": "no it's, fourteen thirty four over route 5762"
+          "text": "no it's, fourteen thirty four over route [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -7754,7 +7754,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "ville okay, I think I have it here. One uh Jeffery"
+          "text": "ville okay, I think I have it here. One uh [MASKED]"
         },
         {
           "channelName": "CLIENT",
@@ -7766,11 +7766,11 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Ryan Parker"
+          "text": "[NAME]"
         },
         {
           "channelName": "AGENT",
-          "text": "Joshua Harvey MD"
+          "text": "[NAME]"
         },
         {
           "channelName": "CLIENT",
@@ -7778,7 +7778,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Joshua Harvey MD"
+          "text": "[NAME]"
         },
         {
           "channelName": "CLIENT",
@@ -7790,11 +7790,11 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Karina"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
-          "text": "huh, huh. Thank you Joshua Harvey MD you wanna keep your mailing to the same address"
+          "text": "huh, huh. Thank you [NAME] you wanna keep your mailing to the same address"
         },
         {
           "channelName": "CLIENT",
@@ -7886,7 +7886,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "o four it's 8853 is a mailbox and I don't know. The address right here for. 53855 Nelson Junction Apt. 889 a"
+          "text": "o four it's [MASKED] is a mailbox and I don't know. The address right here for. [Address] a"
         },
         {
           "channelName": "AGENT",
@@ -7914,11 +7914,11 @@
         },
         {
           "channelName": "AGENT",
-          "text": "like a, a, sip code and you said it's in 53855 Nelson Junction Apt. 889 right"
+          "text": "like a, a, sip code and you said it's in [Address] right"
         },
         {
           "channelName": "CLIENT",
-          "text": "53855 Nelson Junction Apt. 889"
+          "text": "[Address]"
         },
         {
           "channelName": "AGENT",
@@ -7930,31 +7930,31 @@
         },
         {
           "channelName": "AGENT",
-          "text": "p o box three o 8126"
+          "text": "p o box three o [MASKED]"
         },
         {
           "channelName": "CLIENT",
-          "text": "far as I know it's p o box three o four 53855 Nelson Junction Apt. 889 new york one two forty three I bring it off this guy for."
+          "text": "far as I know it's p o box three o four [Address] new york one two forty three I bring it off this guy for."
         },
         {
           "channelName": "AGENT",
-          "text": "<unk> ok thank you and 53855 Nelson Junction Apt. 889 is one word or two separate words."
+          "text": "<unk> ok thank you and [Address] is one word or two separate words."
         },
         {
           "channelName": "CLIENT",
-          "text": "Well actually three you got 53855 Nelson Junction Apt. 889 in new york"
+          "text": "Well actually three you got [Address] in new york"
         },
         {
           "channelName": "AGENT",
-          "text": "Oh that's three words, there's like 53855 Nelson Junction Apt. 889 new york new york"
+          "text": "Oh that's three words, there's like [Address] new york new york"
         },
         {
           "channelName": "CLIENT",
-          "text": "no it's 53855 Nelson Junction Apt. 889 new york why it's two wars with ny, at the enter"
+          "text": "no it's [Address] new york why it's two wars with ny, at the enter"
         },
         {
           "channelName": "AGENT",
-          "text": "oh ok all right so this is how i'm gonna put it tell me if I got right. So under the billing city i'm, putting in 53855 Nelson Junction Apt. 889 new york and obviously end of the state"
+          "text": "oh ok all right so this is how i'm gonna put it tell me if I got right. So under the billing city i'm, putting in [Address] new york and obviously end of the state"
         },
         {
           "channelName": "CLIENT",
@@ -8002,7 +8002,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "o box 3472 and then I got s. 9136"
+          "text": "o box [MASKED] and then I got s. [MASKED]"
         },
         {
           "channelName": "CLIENT",
@@ -8026,7 +8026,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "n y de york, 13528."
+          "text": "n y de york, [MASKED]."
         },
         {
           "channelName": "CLIENT",
@@ -8222,7 +8222,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "is a his name is a Ryan Parker"
+          "text": "is a his name is a [NAME]"
         },
         {
           "channelName": "AGENT",
@@ -8230,7 +8230,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Brandon he's got an account with you people right now"
+          "text": "[MASKED] he's got an account with you people right now"
         },
         {
           "channelName": "AGENT",
@@ -8238,7 +8238,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "cause it's he started 4559"
+          "text": "cause it's he started [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -8386,7 +8386,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "and uh. Um Joshua Harvey MD anytime, there's a, delivery there's a, delivery fee, of, fourteen, dollars and ninety five cents"
+          "text": "and uh. Um [NAME] anytime, there's a, delivery there's a, delivery fee, of, fourteen, dollars and ninety five cents"
         },
         {
           "channelName": "CLIENT",
@@ -8858,7 +8858,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "it's kay with k like kilo Laura"
+          "text": "it's kay with k like kilo [MASKED]"
         },
         {
           "channelName": "CLIENT",
@@ -8975,7 +8975,7 @@
     "acdContactId": "699698361745",
     "acdSessionId": "699698080488",
     "agentContactId": "699698361745",
-    "agentName": "Michael Brooks",
+    "agentName": "[NAME]",
     "agentRecordingId": "f1f4b3af-2945-4031-974f-1faeb1e19a15",
     "agentStreamId": "0",
     "agentUserId": "11ef0f1a-025a-1880-9383-0242ac110002",
@@ -8983,9 +8983,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (716) 553-7391",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (716) 553-7391",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "f1f4b3af-2945-4031-974f-1faeb1e19a15",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -9020,7 +9020,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-13T16:47:30.818Z",
-    "agentInfo": "43845462: Michael Brooks",
+    "agentInfo": "43845462: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-13T18:19:50Z",
     "agentContactUuid": "2bdff309-4296-453c-9da0-9c5e5bb451d3",
@@ -9056,7 +9056,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "password. Plain Michael Brooks speaking how, can I help you"
+          "text": "password. Plain [NAME] speaking how, can I help you"
         },
         {
           "channelName": "CLIENT",
@@ -9072,7 +9072,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "for, cooking Michael Brooks, okay, what is the"
+          "text": "for, cooking [NAME], okay, what is the"
         },
         {
           "channelName": "CLIENT",
@@ -9084,7 +9084,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "fourteen 00059 Holland Meadows"
+          "text": "fourteen [Address]"
         },
         {
           "channelName": "AGENT",
@@ -9092,7 +9092,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "00059 Holland Meadows"
+          "text": "[Address]"
         },
         {
           "channelName": "AGENT",
@@ -9164,7 +9164,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "okay and Timothy allen."
+          "text": "okay and [MASKED] allen."
         },
         {
           "channelName": "AGENT",
@@ -9172,11 +9172,11 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "My name is Anthony Morton."
+          "text": "My name is [NAME]."
         },
         {
           "channelName": "AGENT",
-          "text": "Alexander,"
+          "text": "[MASKED],"
         },
         {
           "channelName": "CLIENT",
@@ -9188,11 +9188,11 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Janice"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
-          "text": "Monica deal ok"
+          "text": "[MASKED] deal ok"
         },
         {
           "channelName": "CLIENT",
@@ -9276,7 +9276,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Um I don't have um the account number but I can get it uh the address I don't know, if it's in 00059 Holland Meadows"
+          "text": "Um I don't have um the account number but I can get it uh the address I don't know, if it's in [Address]"
         },
         {
           "channelName": "AGENT",
@@ -9284,15 +9284,15 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Anthony Morton"
+          "text": "[NAME]"
         },
         {
           "channelName": "AGENT",
-          "text": "Michael Brooks."
+          "text": "[NAME]."
         },
         {
           "channelName": "CLIENT",
-          "text": "marie <unk> <unk> I think it's all Warren Anthony Morton"
+          "text": "marie <unk> <unk> I think it's all [MASKED] [NAME]"
         },
         {
           "channelName": "AGENT",
@@ -9308,7 +9308,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "I I don't know, if it's, 00059 Holland Meadows or 00059 Holland Meadows i'm not sure"
+          "text": "I I don't know, if it's, [Address] or [Address] i'm not sure"
         },
         {
           "channelName": "AGENT",
@@ -9320,7 +9320,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "it be. Michael Brooks <unk>"
+          "text": "it be. [NAME] <unk>"
         },
         {
           "channelName": "CLIENT",
@@ -9408,11 +9408,11 @@
         },
         {
           "channelName": "AGENT",
-          "text": "i'm gonna give you my number is +1 (800) 555-0100"
+          "text": "i'm gonna give you my number is [MASKED]"
         },
         {
           "channelName": "CLIENT",
-          "text": "<unk> ok Janet,"
+          "text": "<unk> ok [MASKED],"
         },
         {
           "channelName": "AGENT",
@@ -9420,7 +9420,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Anthony Morton. Okay, you said Crystal"
+          "text": "[NAME]. Okay, you said [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -9448,7 +9448,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Michael Brooks thank you"
+          "text": "[NAME] thank you"
         },
         {
           "channelName": "CLIENT",
@@ -9533,7 +9533,7 @@
     "acdContactId": "699698449434",
     "acdSessionId": "699698075132",
     "agentContactId": "699698449434",
-    "agentName": "Elizabeth Newman",
+    "agentName": "[NAME]",
     "agentRecordingId": "8dc59f25-77de-4d99-b4bb-ef1e9bb833eb",
     "agentStreamId": "0",
     "agentUserId": "11f06672-ff57-4660-a464-0242ac110002",
@@ -9541,9 +9541,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (718) 366-6764",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (718) 366-6764",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "8dc59f25-77de-4d99-b4bb-ef1e9bb833eb",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -9578,7 +9578,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-13T17:47:04.993Z",
-    "agentInfo": "60826431: Elizabeth Newman",
+    "agentInfo": "60826431: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-13T19:49:15Z",
     "agentContactUuid": "b44d13ed-55ed-4b78-bc96-cf3b32c735c5",
@@ -9743,7 +9743,7 @@
     "acdContactId": "704251809171",
     "acdSessionId": "704251794896",
     "agentContactId": "704251809171",
-    "agentName": "Jason Gonzalez",
+    "agentName": "[NAME]",
     "agentRecordingId": "4d757677-95c0-4f55-8c78-c6e0c30fb6f2",
     "agentStreamId": "0",
     "agentUserId": "11ef4f38-d422-d470-adfd-0242ac110003",
@@ -9751,9 +9751,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (845) 288-0847",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (845) 288-0847",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "4d757677-95c0-4f55-8c78-c6e0c30fb6f2",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -9788,7 +9788,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-05-14T15:27:24.302Z",
-    "agentInfo": "43975389: Jason Gonzalez",
+    "agentInfo": "43975389: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-05-14T15:59:33Z",
     "agentContactUuid": "f9907123-61dc-4a82-9c37-943b29613824",
@@ -9889,7 +9889,7 @@
     "acdContactId": "699698249813",
     "acdSessionId": "699698061727",
     "agentContactId": "699698249813",
-    "agentName": "Robert Torres",
+    "agentName": "[NAME]",
     "agentRecordingId": "1c7da68c-550e-499b-aeee-21d323cd0eeb",
     "agentStreamId": "0",
     "agentUserId": "11ef58c0-9c52-7730-beb3-0242ac110003",
@@ -9897,9 +9897,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (585) 979-5671",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (585) 979-5671",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "1c7da68c-550e-499b-aeee-21d323cd0eeb",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -9934,7 +9934,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-13T15:32:30.240Z",
-    "agentInfo": "43975500: Robert Torres",
+    "agentInfo": "43975500: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-13T16:23:22Z",
     "agentContactUuid": "f47c4a33-909b-4918-82e0-36503e6ecaa0",
@@ -9974,11 +9974,11 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "it's 9358 Lewis Hills Apt. 158 that's in <unk> new jersey."
+          "text": "it's [Address] that's in <unk> new jersey."
         },
         {
           "channelName": "AGENT",
-          "text": "13762 is the zip"
+          "text": "[MASKED] is the zip"
         },
         {
           "channelName": "CLIENT",
@@ -9990,7 +9990,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "yes. My name is Abigail Stokes. N and the last name is Abigail Stokes Joseph"
+          "text": "yes. My name is [NAME]. N and the last name is [NAME] [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -9998,7 +9998,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Renee"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -10114,7 +10114,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "yeah, um so pricing wise for. An installation it's 1,700 dollars ok"
+          "text": "yeah, um so pricing wise for. An installation it's [MASKED] dollars ok"
         },
         {
           "channelName": "CLIENT",
@@ -10134,7 +10134,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "what was that sorry, Benjamin"
+          "text": "what was that sorry, [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -10234,7 +10234,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Robert Torres."
+          "text": "[NAME]."
         },
         {
           "channelName": "CLIENT",
@@ -10438,7 +10438,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "so it'll be. My first initial last name so nicole98."
+          "text": "so it'll be. My first initial last name so [MASKED]."
         },
         {
           "channelName": "AGENT",
@@ -10478,7 +10478,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "that would be great. Yeah, he's Abigail Stokes <unk>"
+          "text": "that would be great. Yeah, he's [NAME] <unk>"
         },
         {
           "channelName": "AGENT",
@@ -10635,7 +10635,7 @@
     "acdContactId": "700528481311",
     "acdSessionId": "700528382137",
     "agentContactId": "700528481311",
-    "agentName": "Joshua Harvey MD",
+    "agentName": "[NAME]",
     "agentRecordingId": "a134b7bf-6735-4af5-a4b5-48557d934299",
     "agentStreamId": "0",
     "agentUserId": "11ef0f1a-007f-8c20-9383-0242ac110002",
@@ -10643,9 +10643,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (914) 669-6035",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (914) 669-6035",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "a134b7bf-6735-4af5-a4b5-48557d934299",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -10680,7 +10680,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-23T14:34:48.136Z",
-    "agentInfo": "43845461: Joshua Harvey MD",
+    "agentInfo": "43845461: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-23T15:02:37Z",
     "agentContactUuid": "ce3b6936-617a-43e3-910b-dd7227e87e1f",
@@ -10712,7 +10712,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "I. Just had a quick question. Um my name's Amanda Ryan I signed up with you guys like two weeks ago and I got my propane tanks and everything's fine perfectly fine. Um I was just wondering 'cause the lady told me i'd get like a, two hundred and fifty dollar credit thing. If I like did a credit check or whatever I was just wondering if I actually got it or not."
+          "text": "I. Just had a quick question. Um my name's [NAME] I signed up with you guys like two weeks ago and I got my propane tanks and everything's fine perfectly fine. Um I was just wondering 'cause the lady told me i'd get like a, two hundred and fifty dollar credit thing. If I like did a credit check or whatever I was just wondering if I actually got it or not."
         },
         {
           "channelName": "AGENT",
@@ -10789,7 +10789,7 @@
     "acdContactId": "699699047718",
     "acdSessionId": "699698871885",
     "agentContactId": "699699050325",
-    "agentName": "Michael Brooks",
+    "agentName": "[NAME]",
     "agentRecordingId": "fd204969-221c-4892-b0f7-0f2d50ad83a5",
     "agentStreamId": "0",
     "agentUserId": "11ef0f1a-025a-1880-9383-0242ac110002",
@@ -10797,9 +10797,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (917) 827-1234",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (917) 827-1234",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "fd204969-221c-4892-b0f7-0f2d50ad83a5",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -10834,7 +10834,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-14T15:52:00.294Z",
-    "agentInfo": "43845462: Michael Brooks",
+    "agentInfo": "43845462: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-14T16:43:26Z",
     "agentContactUuid": "af8f709b-73f0-489d-baa3-3e35825e4f09",
@@ -10862,7 +10862,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Yeah. My name is Gabriel Williams and i'm in inquiring uh about setting up an a a an account <unk> and"
+          "text": "Yeah. My name is [NAME] and i'm in inquiring uh about setting up an a a an account <unk> and"
         },
         {
           "channelName": "AGENT",
@@ -10902,7 +10902,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "3839 Henderson Underpass"
+          "text": "[Address]"
         },
         {
           "channelName": "AGENT",
@@ -10914,7 +10914,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "It 577."
+          "text": "It [MASKED]."
         },
         {
           "channelName": "CLIENT",
@@ -11014,7 +11014,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Gabriel Williams k"
+          "text": "[NAME] k"
         },
         {
           "channelName": "AGENT",
@@ -11022,11 +11022,11 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Courtney Erin"
+          "text": "[MASKED] [MASKED]"
         },
         {
           "channelName": "AGENT",
-          "text": "Thank you Michael Brooks the address is 1210 quick road"
+          "text": "Thank you [NAME] the address is [MASKED] quick road"
         },
         {
           "channelName": "CLIENT",
@@ -11326,11 +11326,11 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Jennifer"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
-          "text": "thank you the address for. Billing is it the same 5364"
+          "text": "thank you the address for. Billing is it the same [MASKED]"
         },
         {
           "channelName": "CLIENT",
@@ -11406,7 +11406,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "3839 Henderson Underpass 8464"
+          "text": "[Address] [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -11434,7 +11434,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Melinda"
+          "text": "[MASKED]"
         },
         {
           "channelName": "CLIENT",
@@ -11446,7 +11446,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "boydwayne dot"
+          "text": "[MASKED] dot"
         },
         {
           "channelName": "AGENT",
@@ -11454,7 +11454,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Jacob"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -11470,11 +11470,11 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Benjamin"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
-          "text": "excellent thank you Michael Brooks are you okay with paperless billing only by email or do. You need paper bills as well"
+          "text": "excellent thank you [NAME] are you okay with paperless billing only by email or do. You need paper bills as well"
         },
         {
           "channelName": "CLIENT",
@@ -11502,11 +11502,11 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "wife wife Gabriel Williams"
+          "text": "wife wife [NAME]"
         },
         {
           "channelName": "AGENT",
-          "text": "okay Karen,"
+          "text": "okay [MASKED],"
         },
         {
           "channelName": "CLIENT",
@@ -11706,7 +11706,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "okay, okay, excellent thank you Michael Brooks that is all the information, we need at this point. Do you have any other question before I let you go"
+          "text": "okay, okay, excellent thank you [NAME] that is all the information, we need at this point. Do you have any other question before I let you go"
         },
         {
           "channelName": "CLIENT",
@@ -11826,7 +11826,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "okay, excellent thank you Michael Brooks so um yes you should get a, call shortly from the service office"
+          "text": "okay, excellent thank you [NAME] so um yes you should get a, call shortly from the service office"
         },
         {
           "channelName": "CLIENT",
@@ -12039,7 +12039,7 @@
     "acdContactId": "699970181595",
     "acdSessionId": "699970037558",
     "agentContactId": "699970181595",
-    "agentName": "Elizabeth Newman",
+    "agentName": "[NAME]",
     "agentRecordingId": "60667b54-2bbe-47c4-8366-8ad8e2fb5a4c",
     "agentStreamId": "0",
     "agentUserId": "11f06672-ff57-4660-a464-0242ac110002",
@@ -12047,9 +12047,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (212) 568-1439",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (212) 568-1439",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "60667b54-2bbe-47c4-8366-8ad8e2fb5a4c",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -12084,7 +12084,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-17T15:13:58.515Z",
-    "agentInfo": "60826431: Elizabeth Newman",
+    "agentInfo": "60826431: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-17T15:49:48Z",
     "agentContactUuid": "351bc1b5-b2ba-48d0-a24a-7bb50b2ad848",
@@ -12108,7 +12108,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Yeah. My name is Matthew Andrews"
+          "text": "Yeah. My name is [NAME]"
         },
         {
           "channelName": "AGENT",
@@ -12124,7 +12124,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Yeah, My name is Matthew Andrews I"
+          "text": "Yeah, My name is [NAME] I"
         },
         {
           "channelName": "AGENT",
@@ -12140,7 +12140,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Um on the 1283."
+          "text": "Um on the [MASKED]."
         },
         {
           "channelName": "AGENT",
@@ -12184,7 +12184,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "let me send you to the yeah, let me send you to the service department sweetheart they will be able to speak to you further with regards to that alright, Elizabeth Newman right"
+          "text": "let me send you to the yeah, let me send you to the service department sweetheart they will be able to speak to you further with regards to that alright, [NAME] right"
         },
         {
           "channelName": "CLIENT",
@@ -12265,7 +12265,7 @@
     "acdContactId": "699699026574",
     "acdSessionId": "699698854119",
     "agentContactId": "699699029490",
-    "agentName": "Todd Barry",
+    "agentName": "[NAME]",
     "agentRecordingId": "5d8fe396-e56c-45e8-bc23-dd5ff4bb5c28",
     "agentStreamId": "0",
     "agentUserId": "11ef0f1a-03c1-49a0-bd21-0242ac110003",
@@ -12273,9 +12273,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (315) 929-4530",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (315) 929-4530",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "5d8fe396-e56c-45e8-bc23-dd5ff4bb5c28",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -12310,7 +12310,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-14T15:23:58.195Z",
-    "agentInfo": "43845467: Todd Barry",
+    "agentInfo": "43845467: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-14T16:06:35Z",
     "agentContactUuid": "682ef9c8-c87b-46db-9db8-d7a18f4d7ea4",
@@ -12386,7 +12386,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "first name Todd Barry."
+          "text": "first name [NAME]."
         },
         {
           "channelName": "CLIENT",
@@ -12398,7 +12398,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "<unk> Kristina"
+          "text": "<unk> [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -12406,7 +12406,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Christine."
+          "text": "[MASKED]."
         },
         {
           "channelName": "AGENT",
@@ -12414,7 +12414,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Um the service address 7480 Dodson Glen Apt. 882"
+          "text": "Um the service address [Address]"
         },
         {
           "channelName": "AGENT",
@@ -12426,15 +12426,15 @@
         },
         {
           "channelName": "AGENT",
-          "text": "7480 Dodson Glen Apt. 882"
+          "text": "[Address]"
         },
         {
           "channelName": "CLIENT",
-          "text": "7480 Dodson Glen Apt. 882."
+          "text": "[Address]."
         },
         {
           "channelName": "AGENT",
-          "text": "Todd Barry line okay, Daniel."
+          "text": "[NAME] line okay, [MASKED]."
         },
         {
           "channelName": "CLIENT",
@@ -12450,7 +12450,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Okay and it was Christopher"
+          "text": "Okay and it was [MASKED]"
         },
         {
           "channelName": "CLIENT",
@@ -12702,7 +12702,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "charging me 3.25 gallons so it's it's"
+          "text": "charging me [MASKED] gallons so it's it's"
         },
         {
           "channelName": "AGENT",
@@ -12806,7 +12806,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Um. Yeah, so it's gonna be my full name and the man Joseph Drake"
+          "text": "Um. Yeah, so it's gonna be my full name and the man [NAME]"
         },
         {
           "channelName": "AGENT",
@@ -12814,7 +12814,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "and then it's it's a, business so it's jzamora gregoryhess and then p v. The letter E and then that's nicole58."
+          "text": "and then it's it's a, business so it's [MASKED] [MASKED] and then p v. The letter [MASKED] and then that's [MASKED]."
         },
         {
           "channelName": "AGENT",
@@ -12826,7 +12826,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "so it's Todd Barry <unk> Todd Barry Carrie, Leon"
+          "text": "so it's [NAME] <unk> [NAME] [MASKED], [MASKED]"
         },
         {
           "channelName": "CLIENT",
@@ -12935,7 +12935,7 @@
     "acdContactId": "700528507034",
     "acdSessionId": "700528366246",
     "agentContactId": "700528507034",
-    "agentName": "Denise Cain",
+    "agentName": "[NAME]",
     "agentRecordingId": "ffff6653-547f-4ff3-826e-98fff7af3def",
     "agentStreamId": "0",
     "agentUserId": "11ef0f1a-030d-ff30-9383-0242ac110002",
@@ -12943,9 +12943,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (347) 556-3069",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (347) 556-3069",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "ffff6653-547f-4ff3-826e-98fff7af3def",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -12980,7 +12980,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-23T15:03:05.649Z",
-    "agentInfo": "43845465: Denise Cain",
+    "agentInfo": "43845465: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-23T15:38:21Z",
     "agentContactUuid": "fccee220-0ccd-4d47-8207-c19685cbe58a",
@@ -13044,7 +13044,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "It's a, 5146. Heidi."
+          "text": "It's a, [MASKED]. [MASKED]."
         },
         {
           "channelName": "AGENT",
@@ -13060,7 +13060,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Lori"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -13072,7 +13072,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Kathy."
+          "text": "[MASKED]."
         },
         {
           "channelName": "CLIENT",
@@ -13260,7 +13260,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "237 Barton Squares."
+          "text": "[Address]."
         },
         {
           "channelName": "AGENT",
@@ -13276,7 +13276,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "It's a Mark Cole. Huh."
+          "text": "It's a [NAME]. Huh."
         },
         {
           "channelName": "AGENT",
@@ -13288,7 +13288,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Alright one moment, please. And this. Is gonna be Matthew let's go to. It it's the billing office. Huh, rome twelve eighty. All right, one moment i'll transfer you over to billing."
+          "text": "Alright one moment, please. And this. Is gonna be [MASKED] let's go to. It it's the billing office. Huh, rome twelve eighty. All right, one moment i'll transfer you over to billing."
         },
         {
           "channelName": "CLIENT",
@@ -13357,7 +13357,7 @@
     "acdContactId": "699698606337",
     "acdSessionId": "699698080892",
     "agentContactId": "699698613163",
-    "agentName": "Brian Conner",
+    "agentName": "[NAME]",
     "agentRecordingId": "da99e119-7284-4f50-8e13-7cc91cb72edf",
     "agentStreamId": "0",
     "agentUserId": "11ef0f1a-01f6-c2d0-9383-0242ac110002",
@@ -13365,9 +13365,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (607) 432-8799",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (607) 432-8799",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "da99e119-7284-4f50-8e13-7cc91cb72edf",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -13402,7 +13402,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-04-13T20:13:54.886Z",
-    "agentInfo": "43845464: Brian Conner",
+    "agentInfo": "43845464: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-04-13T23:19:05Z",
     "agentContactUuid": "241eae50-ccb4-4330-8a58-6ca1017af93e",
@@ -13438,11 +13438,11 @@
         },
         {
           "channelName": "AGENT",
-          "text": "sales. This is Brian Conner speaking. How, can I help you"
+          "text": "sales. This is [NAME] speaking. How, can I help you"
         },
         {
           "channelName": "CLIENT",
-          "text": "hi Richard Perry Richard Perry Felicia, how are you today"
+          "text": "hi [NAME] [NAME] [MASKED], how are you today"
         },
         {
           "channelName": "AGENT",
@@ -13522,7 +13522,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "like 655 2535 Adams Plains 3523"
+          "text": "like [MASKED] [Address] [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -13582,7 +13582,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "2535 Adams Plains"
+          "text": "[Address]"
         },
         {
           "channelName": "CLIENT",
@@ -13962,7 +13962,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "the the owner the owner lives in 2535 Adams Plains"
+          "text": "the the owner the owner lives in [Address]"
         },
         {
           "channelName": "AGENT",
@@ -14202,7 +14202,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "ok it's 6796"
+          "text": "ok it's [MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -14230,11 +14230,11 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Um just for. The quote i'll just build. It off of this and what was your first name was it Brian Conner."
+          "text": "Um just for. The quote i'll just build. It off of this and what was your first name was it [NAME]."
         },
         {
           "channelName": "CLIENT",
-          "text": "yes Richard Perry i, the the actual is Richard Perry r a n"
+          "text": "yes [NAME] i, the the actual is [NAME] r a n"
         },
         {
           "channelName": "AGENT",
@@ -14242,7 +14242,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Olivia"
+          "text": "[MASKED]"
         },
         {
           "channelName": "AGENT",
@@ -14254,7 +14254,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "okay and it's 9407"
+          "text": "okay and it's [MASKED]"
         },
         {
           "channelName": "CLIENT",
@@ -14266,7 +14266,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "Kara,"
+          "text": "[MASKED],"
         },
         {
           "channelName": "AGENT",
@@ -14274,7 +14274,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "s 2535 Adams Plains 3333 not trying to sell you"
+          "text": "s [Address] [MASKED] not trying to sell you"
         },
         {
           "channelName": "AGENT",
@@ -14282,7 +14282,7 @@
         },
         {
           "channelName": "CLIENT",
-          "text": "it's 2535 Adams Plains 4332 no"
+          "text": "it's [Address] [MASKED] no"
         },
         {
           "channelName": "AGENT",
@@ -14318,7 +14318,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "sir. There it is it's coming up as new york 13172"
+          "text": "sir. There it is it's coming up as new york [MASKED]"
         },
         {
           "channelName": "CLIENT",
@@ -14326,7 +14326,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "2535 Adams Plains ok."
+          "text": "[Address] ok."
         },
         {
           "channelName": "CLIENT",
@@ -14342,7 +14342,7 @@
         },
         {
           "channelName": "AGENT",
-          "text": "just put in the um the street just to do, one more search under 2535 Adams Plains but there's still not anything coming"
+          "text": "just put in the um the street just to do, one more search under [Address] but there's still not anything coming"
         },
         {
           "channelName": "CLIENT",
@@ -15334,11 +15334,11 @@
         },
         {
           "channelName": "AGENT",
-          "text": "Brian Conner"
+          "text": "[NAME]"
         },
         {
           "channelName": "CLIENT",
-          "text": "she's Richard Perry okay. Thank you very much appreciate"
+          "text": "she's [NAME] okay. Thank you very much appreciate"
         },
         {
           "channelName": "AGENT",
@@ -15555,7 +15555,7 @@
     "acdContactId": "701368261363",
     "acdSessionId": "701368223694",
     "agentContactId": "701368261363",
-    "agentName": "Jason Gonzalez",
+    "agentName": "[NAME]",
     "agentRecordingId": "1cf3105a-f59b-4772-9909-857c88d176fc",
     "agentStreamId": "0",
     "agentUserId": "11ef4f38-d422-d470-adfd-0242ac110003",
@@ -15563,9 +15563,9 @@
     "ani": "",
     "caseId": "",
     "channelType": "PHONE_CALL",
-    "clientAni": "+1 (516) 536-5530",
-    "clientDialedIn": "+1 (800) 555-0100",
-    "clientPhoneNumber": "+1 (516) 536-5530",
+    "clientAni": "[MASKED]",
+    "clientDialedIn": "[MASKED]",
+    "clientPhoneNumber": "[MASKED]",
     "clientRecordingId": "1cf3105a-f59b-4772-9909-857c88d176fc",
     "clientStreamId": "1",
     "clientTimezone": "America/New_York",
@@ -15600,7 +15600,7 @@
     "updateType": "SEGMENT",
     "versionId": 2.5,
     "wrapUpTime": "2026-05-05T15:46:08.937Z",
-    "agentInfo": "43975389: Jason Gonzalez",
+    "agentInfo": "43975389: [NAME]",
     "teamUuid": "4618ddb2-94bd-485f-b879-1d9557b08a32",
     "firstAnnotatedAt": "2026-05-05T15:59:35Z",
     "agentContactUuid": "d70d5059-f0b7-4a75-bbfa-562aad694c3d",
