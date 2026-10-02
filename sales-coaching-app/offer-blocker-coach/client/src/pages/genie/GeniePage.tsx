@@ -2,7 +2,6 @@ import {
   Alert,
   AlertDescription,
   AlertTitle,
-  Badge,
   Button,
   Card,
   CardContent,
@@ -64,6 +63,18 @@ export function GeniePage() {
     return null;
   }, [lastAnswer]);
 
+  /**
+   * Genie's narrative answer arrives as a text attachment — `message.content`
+   * echoes the question back — so prefer the attachment and fall back to the
+   * message body only when there is no text attachment.
+   */
+  const answerText = useMemo(() => {
+    for (const attachment of lastAnswer?.attachments ?? []) {
+      if (attachment.text?.content) return attachment.text.content;
+    }
+    return lastAnswer?.content ?? '';
+  }, [lastAnswer]);
+
   /** The first tabular result attached to the most recent answer, if any. */
   const resultData = useMemo(() => {
     const first = lastAnswer?.queryResults.values().next();
@@ -75,16 +86,16 @@ export function GeniePage() {
     const question = lastQuestion?.content ?? '';
     return {
       title: question.length > 90 ? `${question.slice(0, 87)}…` : question || 'Coaching case from Genie',
-      evidence: lastAnswer.content,
+      evidence: answerText,
       genieQuestion: question || undefined,
-      genieAnswer: lastAnswer.content,
+      genieAnswer: answerText,
       genieSql: generatedQuery?.query ?? undefined,
       genieConversationId: conversationId ?? undefined,
     };
-  }, [lastAnswer, lastQuestion, generatedQuery, conversationId]);
+  }, [lastAnswer, lastQuestion, answerText, generatedQuery, conversationId]);
 
   const isStreaming = status === 'streaming';
-  const hasAnswer = Boolean(lastAnswer && lastAnswer.content);
+  const hasAnswer = answerText.length > 0;
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-4">
@@ -98,7 +109,6 @@ export function GeniePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="secondary">{identity?.email ?? 'Signed in'}</Badge>
           <Button variant="outline" size="sm" onClick={reset} disabled={messages.length === 0}>
             <RotateCcw className="mr-2 h-4 w-4" />
             New conversation
@@ -111,10 +121,12 @@ export function GeniePage() {
         <ShieldCheck className="h-4 w-4" />
         <AlertTitle>How this runs</AlertTitle>
         <AlertDescription>
-          Genie queries execute <strong>on your behalf</strong> — the app declares the <code>dashboards.genie</code>{' '}
-          user scope, so you only ever see data your own Unity Catalog permissions allow. Coaching notes you save are
-          written to Lakebase by the app&apos;s service principal and attributed to{' '}
-          {identity?.email ?? 'your signed-in account'}.
+          <p>
+            Genie queries execute <strong className="font-medium">on your behalf</strong> — the app declares the{' '}
+            <code className="font-mono text-xs">dashboards.genie</code> user scope, so you only ever see data your own
+            Unity Catalog permissions allow. Coaching notes you save are written to Lakebase by the app&apos;s service
+            principal and attributed to {identity?.email ?? 'your signed-in account'}.
+          </p>
         </AlertDescription>
       </Alert>
 

@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { SEED_ROSTER, initCoachingSchema } from '../schema';
+import { EXPECTED_TABLES, SEED_ROSTER, initCoachingSchema } from '../schema';
 import { createFakeDb, type QueryResponder } from './harness';
 
-/** Responds to the roster-count probe with `count`, and succeeds otherwise. */
+/**
+ * Reports `tablesPresent` existing tables, answers the roster-count probe with
+ * `count`, and succeeds for every other statement.
+ */
 const responderWithRosterCount =
-  (count: number): QueryResponder =>
+  (count: number, tablesPresent = 0): QueryResponder =>
   (text) => {
+    if (text.includes('FROM information_schema.tables')) {
+      return { rows: [{ present: tablesPresent }] };
+    }
     if (text.includes('AS count FROM sales_coaching.salespeople')) {
       return { rows: [{ count }] };
     }
@@ -46,6 +52,28 @@ describe('initCoachingSchema', () => {
 
     const inserts = calls.filter((call) => call.text.includes('INSERT INTO sales_coaching.salespeople'));
     expect(inserts).toHaveLength(0);
+  });
+
+  /*
+   * The DDL is only idempotent for the object owner, so once the schema exists
+   * it must be skipped — that is what lets a developer run locally against a
+   * database whose objects the deployed service principal owns.
+   */
+  it('skips the DDL entirely when every table already exists', async () => {
+    const { db, calls } = createFakeDb(responderWithRosterCount(8, EXPECTED_TABLES.length));
+    await initCoachingSchema(db);
+
+    const text = calls.map((call) => call.text).join('\n');
+    expect(text).not.toContain('CREATE SCHEMA');
+    expect(text).not.toContain('CREATE TABLE');
+    expect(text).not.toContain('CREATE INDEX');
+  });
+
+  it('runs the DDL when the schema is only partially present', async () => {
+    const { db, calls } = createFakeDb(responderWithRosterCount(0, 2));
+    await initCoachingSchema(db);
+
+    expect(calls.map((call) => call.text).join('\n')).toContain('CREATE TABLE IF NOT EXISTS');
   });
 
   it('propagates a DDL failure so the caller can report it', async () => {

@@ -13,12 +13,12 @@ modified by this app.
 
 ## What a manager does here
 
-| Page | Purpose |
-|---|---|
-| **Coaching queue** (`/`) | Headline counts, active cases by blocker code, load per salesperson, and a filterable case list (status, rep, real-blockers-only, free-text search). |
-| **Case workspace** (`/cases/:id`) | The finding and its evidence, the Genie provenance it came from, coaching notes with two ratings, agreed actions, and an audit trail. |
-| **Ask Genie** (`/genie`) | Curated coaching questions plus free-form chat, the generated SQL for every answer, and one click to open a coaching case from an answer. |
-| **Team** (`/team`) | The salesperson roster — add, edit, deactivate. |
+| Page                              | Purpose                                                                                                                                              |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Coaching queue** (`/`)          | Headline counts, active cases by blocker code, load per salesperson, and a filterable case list (status, rep, real-blockers-only, free-text search). |
+| **Case workspace** (`/cases/:id`) | The finding and its evidence, the Genie provenance it came from, coaching notes with two ratings, agreed actions, and an audit trail.                |
+| **Ask Genie** (`/genie`)          | Curated coaching questions plus free-form chat, the generated SQL for every answer, and one click to open a coaching case from an answer.            |
+| **Team** (`/team`)                | The salesperson roster — add, edit, deactivate.                                                                                                      |
 
 ## Architecture
 
@@ -38,25 +38,25 @@ state. The app deliberately does not query Unity Catalog directly.
 
 ## Databricks resources
 
-| Resource | Value |
-|---|---|
-| Workspace | `adb-7405605163137288.8.azuredatabricks.net` |
-| Genie space | `01f19cba5b581c9a81e28d0502069ec6` (*Offer Blocker Analytics*) |
-| Lakebase project | `projects/offer-blocker-coaching` |
-| Lakebase branch | `projects/offer-blocker-coaching/branches/production` |
-| Lakebase database | `databricks-postgres` (schema `sales_coaching`) |
+| Resource          | Value                                                          |
+| ----------------- | -------------------------------------------------------------- |
+| Workspace         | `adb-7405605163137288.8.azuredatabricks.net`                   |
+| Genie space       | `01f19cba5b581c9a81e28d0502069ec6` (_Offer Blocker Analytics_) |
+| Lakebase project  | `projects/offer-blocker-coaching`                              |
+| Lakebase branch   | `projects/offer-blocker-coaching/branches/production`          |
+| Lakebase database | `databricks-postgres` (schema `sales_coaching`)                |
 
 ## Lakebase schema
 
 Created idempotently at startup by the app's service principal.
 
-| Table | Holds |
-|---|---|
-| `salespeople` | The roster. Seeded once from the sample batch, then manager-owned. |
-| `coaching_cases` | One case per blocker being coached, plus its Genie provenance. |
-| `action_items` | Commitments from the coaching conversation. |
-| `case_feedback` | Append-only coaching notes, a 1–5 handling rating, and a verdict on whether the AI finding was correct. |
-| `case_events` | Audit trail of every change. |
+| Table            | Holds                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------- |
+| `salespeople`    | The roster. Seeded once from the sample batch, then manager-owned.                                      |
+| `coaching_cases` | One case per blocker being coached, plus its Genie provenance.                                          |
+| `action_items`   | Commitments from the coaching conversation.                                                             |
+| `case_feedback`  | Append-only coaching notes, a 1–5 handling rating, and a verdict on whether the AI finding was correct. |
+| `case_events`    | Audit trail of every change.                                                                            |
 
 ### Salesperson attribution
 

@@ -101,6 +101,33 @@ const DDL: readonly string[] = [
   `CREATE INDEX IF NOT EXISTS case_events_case_idx ON ${SCHEMA}.case_events (case_id)`,
 ];
 
+/** Every table `initCoachingSchema` is responsible for creating. */
+const EXPECTED_TABLES = ['salespeople', 'coaching_cases', 'action_items', 'case_feedback', 'case_events'] as const;
+
+/**
+ * True when every expected table already exists.
+ *
+ * This probe matters because the DDL above is only *idempotent for the owner*:
+ * `CREATE INDEX IF NOT EXISTS` checks table ownership before it checks whether
+ * the index exists, so a non-owner re-running it fails with
+ * `must be owner of table`. The deployed service principal owns these objects;
+ * a developer running locally does not. Skipping the DDL once the schema is in
+ * place keeps local runs clean while still letting the service principal create
+ * everything on a fresh database.
+ *
+ * If a later change adds a table this returns false and the DDL runs again,
+ * which correctly means such a migration must be applied by a deployment.
+ */
+async function schemaIsPresent(db: CoachingDb): Promise<boolean> {
+  const { rows } = await db.query<{ present: number }>(
+    `SELECT CAST(COUNT(*) AS INT) AS present
+       FROM information_schema.tables
+      WHERE table_schema = $1 AND table_name = ANY($2)`,
+    [SCHEMA, [...EXPECTED_TABLES]]
+  );
+  return (rows[0]?.present ?? 0) === EXPECTED_TABLES.length;
+}
+
 /**
  * Seeds the roster only while it is empty, so a manager's later edits and
  * removals are never resurrected by a restart.
@@ -126,11 +153,16 @@ async function seedRoster(db: CoachingDb): Promise<number> {
 
 /** Applies the schema and seeds the roster. Safe to run on every boot. */
 export async function initCoachingSchema(db: CoachingDb): Promise<void> {
-  for (const statement of DDL) {
-    await db.query(statement);
+  if (await schemaIsPresent(db)) {
+    console.log(`[coaching] schema ${SCHEMA} already present, skipping DDL`);
+  } else {
+    for (const statement of DDL) {
+      await db.query(statement);
+    }
   }
+
   const seeded = await seedRoster(db);
   console.log(`[coaching] schema ${SCHEMA} ready${seeded > 0 ? ` (seeded ${seeded} salespeople)` : ''}`);
 }
 
-export { SEED_ROSTER };
+export { EXPECTED_TABLES, SEED_ROSTER };

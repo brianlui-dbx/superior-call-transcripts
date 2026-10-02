@@ -35,11 +35,26 @@ export function dispositionLabel(disposition: string | null): string {
   return DISPOSITION_LABELS[disposition] ?? disposition;
 }
 
+/**
+ * Formats a date for display.
+ *
+ * DATE columns arrive as `YYYY-MM-DD` with no timezone. Parsing them as UTC and
+ * then formatting in the viewer's local zone shifts the calendar day backwards
+ * anywhere west of UTC, so a follow-up set to the 14th renders as the 13th.
+ * Date-only values are therefore formatted in UTC to keep the day exact;
+ * timestamps, which do carry a zone, stay local.
+ */
 export function formatDate(value: string | null): string {
   if (!value) return '—';
-  const date = new Date(value.length === 10 ? `${value}T00:00:00Z` : value);
+  const isDateOnly = value.length === 10;
+  const date = new Date(isDateOnly ? `${value}T00:00:00Z` : value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  return date.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    ...(isDateOnly ? { timeZone: 'UTC' } : {}),
+  });
 }
 
 export function formatDateTime(value: string | null): string {
@@ -55,12 +70,17 @@ export function formatTime(value: string): string {
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-/** True when a follow-up date has passed and the case is still active. */
+/**
+ * True when a follow-up date has passed and the case is still active.
+ *
+ * Compared against the viewer's local calendar day (the same basis as the date
+ * picker's `min`), so "overdue" matches what the manager sees on their own
+ * calendar rather than UTC's.
+ */
 export function isOverdue(followUpOn: string | null, status: CaseStatus): boolean {
   if (!followUpOn) return false;
   if (status !== 'open' && status !== 'in_coaching') return false;
-  const today = new Date().toISOString().slice(0, 10);
-  return followUpOn < today;
+  return followUpOn < todayISO();
 }
 
 /** `today` in the local timezone, formatted for a date input's `min`. */
