@@ -177,7 +177,8 @@
             "After init, configure the 'spaces' map in plugin config with alias-to-Space-ID mappings"
           ]
         }
-      }
+      },
+      "requiredByTemplate": true
     },
     "jobs": {
       "name": "jobs",
@@ -306,7 +307,8 @@
             "After init, verify Lakebase connectivity with 'psql $PGHOST -c \"select 1\"'"
           ]
         }
-      }
+      },
+      "requiredByTemplate": true
     },
     "server": {
       "name": "server",
@@ -349,7 +351,7 @@
     "command": "databricks apps init",
     "flags": {
       "--name": {
-        "description": "Project name — sets offer-blocker-coach in package.json, databricks.yml, and .env. Required for non-interactive scaffolding.",
+        "description": "Project name — sets {{.projectName}} in package.json, databricks.yml, and .env. Required for non-interactive scaffolding.",
         "required": true,
         "pattern": "^[a-z][a-z0-9-]*$"
       },

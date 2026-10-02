@@ -1,186 +1,108 @@
-# offer-blocker-coach
+# Offer Blocker Coach
 
-A Databricks App powered by [AppKit](https://developers.databricks.com/docs/appkit/v0/), featuring React, TypeScript, and Tailwind CSS.
+A sales-manager-facing Databricks App that turns the offer-blocker intelligence in this
+repository into coached, tracked follow-up.
 
-**Enabled plugins:**
-- **Lakebase** -- Fully managed Postgres database for transactional (OLTP) workloads on Databricks
-- **Genie** -- AI/BI Genie conversational interface for natural language data queries
-- **Server** -- Express HTTP server with static file serving and Vite dev mode
+- **Genie** — the existing **Offer Blocker Analytics** agent answers natural-language questions
+  about blockers, call tone, quoted rates, and drafted follow-up emails.
+- **Lakebase** — every manager decision (assignment, status, coaching notes, agreed actions) is
+  persisted to Postgres for operational serving.
 
-## Prerequisites
+Nothing in the pipeline, dashboard, Genie definition, or `superior-offer-blocker/` bundle is
+modified by this app.
 
-- Node.js v22+ and npm
-- Databricks CLI (for deployment)
-- Access to a Databricks workspace
+## What a manager does here
 
-## Databricks Authentication
+| Page | Purpose |
+|---|---|
+| **Coaching queue** (`/`) | Headline counts, active cases by blocker code, load per salesperson, and a filterable case list (status, rep, real-blockers-only, free-text search). |
+| **Case workspace** (`/cases/:id`) | The finding and its evidence, the Genie provenance it came from, coaching notes with two ratings, agreed actions, and an audit trail. |
+| **Ask Genie** (`/genie`) | Curated coaching questions plus free-form chat, the generated SQL for every answer, and one click to open a coaching case from an answer. |
+| **Team** (`/team`) | The salesperson roster — add, edit, deactivate. |
 
-### Local Development
+## Architecture
 
-For local development, configure your environment variables by creating a `.env` file:
+```text
+Sales manager (browser)
+        │
+        ├── /api/genie/offerBlockers/…  → AppKit genie plugin → Genie agent → SQL warehouse
+        │       runs ON BEHALF OF the signed-in user (user_api_scopes: dashboards.genie)
+        │
+        └── /api/coaching-cases, /api/salespeople, /api/coaching-summary
+                → AppKit lakebase plugin → Lakebase Postgres (schema `sales_coaching`)
+                  runs as the app's service principal, attributed to the signed-in user
+```
+
+Genie is the read path for lakehouse analysis; Lakebase is the read/write path for coaching
+state. The app deliberately does not query Unity Catalog directly.
+
+## Databricks resources
+
+| Resource | Value |
+|---|---|
+| Workspace | `adb-7405605163137288.8.azuredatabricks.net` |
+| Genie space | `01f19cba5b581c9a81e28d0502069ec6` (*Offer Blocker Analytics*) |
+| Lakebase project | `projects/offer-blocker-coaching` |
+| Lakebase branch | `projects/offer-blocker-coaching/branches/production` |
+| Lakebase database | `databricks-postgres` (schema `sales_coaching`) |
+
+## Lakebase schema
+
+Created idempotently at startup by the app's service principal.
+
+| Table | Holds |
+|---|---|
+| `salespeople` | The roster. Seeded once from the sample batch, then manager-owned. |
+| `coaching_cases` | One case per blocker being coached, plus its Genie provenance. |
+| `action_items` | Commitments from the coaching conversation. |
+| `case_feedback` | Append-only coaching notes, a 1–5 handling rating, and a verdict on whether the AI finding was correct. |
+| `case_events` | Audit trail of every change. |
+
+### Salesperson attribution
+
+The raw transcript files carry `agentId` / `agentName`, but the current pipeline does not surface
+them on the gold tables Genie reads, so a finding cannot be attributed to a rep automatically.
+The roster is therefore seeded from the sanitized sample batch and the manager assigns cases.
+If `agentId` is later propagated into `gold_offer_blocker_summary`, assignment can be automated
+against the `salespeople.agent_id` column that already exists for that purpose.
+
+## Deploy
+
+Deploy **before** running locally — the service principal must create and own the
+`sales_coaching` schema. Running `npm run dev` first makes your own identity the owner and the
+deployed app then fails with `permission denied`.
 
 ```bash
-cp .env.example .env
+PROFILE=dbw-brlui-stable
+
+databricks apps validate --profile "$PROFILE"
+databricks bundle deploy --profile "$PROFILE"       # from this directory
+databricks apps get offer-blocker-coach --profile "$PROFILE" -o json   # expect RUNNING + url
+databricks apps logs offer-blocker-coach --profile "$PROFILE"          # OAuth profiles only
 ```
 
-Edit `.env` and set the environment variables you need:
+## Local development
 
-```env
-DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
-DATABRICKS_APP_PORT=8000
-# ... other environment variables, depending on the plugins you use
-```
-
-#### Lakebase Configuration
-
-The Lakebase plugin requires additional environment variables for PostgreSQL connectivity. To learn how to configure the Lakebase plugin, see the [Lakebase plugin documentation](https://developers.databricks.com/docs/appkit/v0/plugins/lakebase).
-
-### CLI Authentication
-
-The Databricks CLI requires authentication to deploy and manage apps. Configure authentication using one of these methods:
-
-#### OAuth U2M
-
-Interactive browser-based authentication with short-lived tokens:
-
-```bash
-databricks auth login --host https://your-workspace.cloud.databricks.com
-```
-
-This will open your browser to complete authentication. The CLI saves credentials to `~/.databrickscfg`.
-
-#### Configuration Profiles
-
-Use multiple profiles for different workspaces:
-
-```ini
-[DEFAULT]
-host = https://dev-workspace.cloud.databricks.com
-
-[production]
-host = https://prod-workspace.cloud.databricks.com
-client_id = prod-client-id
-client_secret = prod-client-secret
-```
-
-Deploy using a specific profile:
-
-```bash
-databricks bundle deploy --profile production
-```
-
-**Note:** Personal Access Tokens (PATs) are legacy authentication. OAuth is strongly recommended for better security.
-
-## Getting Started
-
-### Install Dependencies
+After the app has been deployed at least once:
 
 ```bash
 npm install
+npm run dev      # http://localhost:8000
 ```
 
-### Development
+`.env` is written by `databricks apps init` and is gitignored. Locally, identity headers are
+absent, so coaching entries are attributed to `null` and Genie runs with your CLI credentials.
 
-Run the app in development mode with hot reload:
+## Checks
 
 ```bash
-npm run dev
+npm run typecheck      # server + client
+npm run lint           # eslint
+npm run lint:ast-grep  # appkit lint (AppKit anti-patterns)
+npm test               # vitest — 52 tests
+npm run build          # server bundle + client bundle
 ```
 
-The app will be available at the URL shown in the console output.
-
-### Build
-
-Build both client and server for production:
-
-```bash
-npm run build
-```
-
-This creates:
-
-- `dist/server.js` - Compiled server bundle
-- `client/dist/` - Bundled client assets
-
-### Production
-
-Run the production build:
-
-```bash
-npm start
-```
-
-## Code Quality
-
-There are a few commands to help you with code quality:
-
-```bash
-# Type checking
-npm run typecheck
-
-# Linting
-npm run lint
-npm run lint:fix
-
-# Formatting
-npm run format
-npm run format:fix
-```
-
-## Deployment with Databricks Asset Bundles
-
-### 1. Configure Bundle
-
-Update `databricks.yml` with your workspace settings:
-
-```yaml
-targets:
-  default:
-    workspace:
-      host: https://your-workspace.cloud.databricks.com
-```
-
-Make sure to replace all placeholder values in `databricks.yml` with your actual resource IDs.
-
-### 2. Deploy
-
-Deploy and start the app with a single command:
-
-```bash
-databricks apps deploy
-```
-
-`databricks apps deploy` validates the project, deploys it, starts the app, and prints its URL.
-
-### Deploy to Production
-
-1. Configure the production target in `databricks.yml`
-2. Deploy to production:
-
-```bash
-databricks apps deploy -t prod
-```
-
-> **Restarting a stopped app:** apps stop after a period of inactivity. To start one again without redeploying, run `databricks apps start <APP_NAME>`.
-
-## Project Structure
-
-```
-* client/          # React frontend
-  * src/           # Source code
-  * public/        # Static assets
-* server/          # Express backend
-  * server.ts      # Server entry point
-  * routes/        # Routes
-* shared/          # Shared types
-* databricks.yml   # Bundle configuration
-* app.yaml         # App configuration
-* .env.example     # Environment variables example
-```
-
-## Tech Stack
-
-- **Backend**: Node.js, Express
-- **Frontend**: React.js, TypeScript, Vite, Tailwind CSS, React Router
-- **UI Components**: Radix UI, shadcn/ui
-- **Databricks**: AppKit SDK
+Tests cover the validation contract, the three-state PATCH semantics (absent vs. explicit null),
+SQL parameter binding, schema/seed idempotency, and the HTTP behaviour of every route against a
+fake Lakebase, using real Express.

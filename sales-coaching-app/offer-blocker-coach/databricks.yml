@@ -16,8 +16,8 @@ variables:
 resources:
   apps:
     app:
-      name: "offer-blocker-coach"
-      description: "Sales manager coaching workflow powered by Offer Blocker Analytics and Lakebase"
+      name: 'offer-blocker-coach'
+      description: 'Sales manager coaching workflow powered by Offer Blocker Analytics and Lakebase'
       source_code_path: ./
 
       # Start the app automatically on deploy.
