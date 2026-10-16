@@ -62,7 +62,7 @@ dbutils.widgets.text("run_label", "baseline_v1", "Human name for THIS prompt var
 dbutils.widgets.text("confidence_threshold", "0.0", "Keep labels with confidence >= this")
 dbutils.widgets.dropdown("run_gepa", "true", ["false", "true"], "Run GEPA automated optimization?")
 dbutils.widgets.dropdown(
-    "gepa_phase", "instructions",
+    "gepa_phase", "joint",
     ["descriptions", "instructions", "joint"],
     "GEPA phase: which surface(s) to optimize",
 )
@@ -1458,7 +1458,7 @@ if RUN_GEPA and GEPA_PHASE in ("descriptions", "joint"):
                     train_data=train_data_gepa,
                     prompt_uris=[_desc_for_gepa.uri],
                     optimizer=GepaPromptOptimizer(
-                        reflection_model="databricks:/databricks-claude-opus-5-5",
+                        reflection_model="databricks:/databricks-claude-sonnet-5",
                         max_metric_calls=50,
                         display_progress_bar=True,
                     ),
@@ -1549,7 +1549,7 @@ if RUN_GEPA and GEPA_PHASE in ("instructions", "joint"):
                     train_data=train_data_gepa,
                     prompt_uris=[_instr_for_gepa.uri],
                     optimizer=GepaPromptOptimizer(
-                        reflection_model="databricks:/databricks-claude-opus-5-5",
+                        reflection_model="databricks:/databricks-claude-sonnet-5",
                         max_metric_calls=50,
                         display_progress_bar=True,
                     ),
@@ -1632,7 +1632,7 @@ if RUN_GEPA and GEPA_PHASE == "joint":
                 train_data=train_data_gepa,
                 prompt_uris=[_desc_for_joint.uri, _instr_for_joint.uri],
                 optimizer=GepaPromptOptimizer(
-                    reflection_model="databricks:/databricks-claude-opus-5-5",
+                    reflection_model="databricks:/databricks-claude-sonnet-5",
                     max_metric_calls=80,  # more budget for joint search
                     display_progress_bar=True,
                 ),
