@@ -67,7 +67,7 @@ adjacent boundaries **4A ↔ 4B ↔ 4C** and **4C ↔ 4D**.
 | Phase | §§ | What happens |
 |-------|----|--------------|
 | **Setup** | 0–1 | Parameters, prompt config, **register in Prompt Registry** |
-| **Data** | 2–3 | Load managed eval dataset, inspect class balance, train/eval split |
+| **Data** | 2–3 | Load managed eval dataset, inspect class balance, **3-way train/validation/test split** |
 | **Score** | 4–7 | Build SQL, cache predictions, `mlflow.genai.evaluate()`, corpus metrics |
 | **Diagnose** | 8–10 | Error analysis + substitution matrix, iteration guide + threshold sweep |
 | **Compare** | 11 | Programmatic side-by-side of all runs |
@@ -100,7 +100,9 @@ MLflow way to work with UC-backed eval data.
 Automated prompt evolution — optimizes the **instructions** string (the semantic
 surface) while holding descriptions fixed (the structured routing rules). Gated behind
 a widget because it's slow and costly (one SQL call per row per GEPA iteration). Uses
-a train/eval split (Section 3) to prevent overfitting.
+a **3-way split** (Section 3) — train for optimization, validation for selecting the
+best candidate, and a held-out **test split** for the final honest check — to prevent
+overfitting.
 
 ---
 
@@ -155,10 +157,24 @@ threshold will save you.
 | | Manual tuning (Sections 8–10) | GEPA (Section 12) |
 |---|---|---|
 | **Best for** | Boundary errors (descriptions), under/over-assignment (instructions) | Plateau-breaking on instructions after manual gains stall |
-| **Dataset size** | Any (even small) | ~100+ rows per split (train + eval) |
+| **Dataset size** | Any (even small) | 200–400+ total rows; ≥30 per label per split |
+| **Splits** | Evaluates on **full** dataset (generalizable edits) | **3-way**: train (70%) / validation (15%) / test (15%) |
 | **Surface** | Either (descriptions or instructions) | Instructions only (GEPA would break contrastive descriptions) |
 | **Cost** | Free (edits cached predictions) | Expensive (1 SQL call × n_train × GEPA iterations) |
 | **Transparency** | You read rationales and understand every edit | GEPA outputs opaque evolved text |
+
+### Why 3 splits, not 2?
+
+| Split | Purpose | Who sees it |
+|-------|---------|-------------|
+| **Train** (~70%) | What GEPA optimizes against | GEPA |
+| **Validation** (~15%) | Picks the winning prompt candidate | GEPA (for selection — "used up") |
+| **Test** (~15%) | Final honest check | **Nobody until final eval** |
+
+The validation set is compromised by *selection*: repeatedly choosing the prompt that
+scores best on it can overfit to that set, even though GEPA didn't directly train on
+it. The test set is the only truly independent assessment. Think of it as "train is
+for learning, validation is for choosing, test is for believing."
 
 ---
 

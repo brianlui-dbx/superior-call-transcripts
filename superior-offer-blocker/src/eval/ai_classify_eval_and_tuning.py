@@ -29,11 +29,11 @@
 # MAGIC | Phase | Sections | What happens |
 # MAGIC |-------|----------|--------------|
 # MAGIC | **Setup** | 0–1 | Parameters, prompt config, **register prompt in Prompt Registry** |
-# MAGIC | **Data** | 2–3 | Load managed eval dataset, inspect class balance, train/eval split |
+# MAGIC | **Data** | 2–3 | Load managed eval dataset, inspect class balance, train/validation/test split |
 # MAGIC | **Score** | 4–7 | Build SQL, cache predictions, run `mlflow.genai.evaluate()`, corpus metrics |
 # MAGIC | **Diagnose** | 8–10 | Error analysis, substitution matrix, decision guide + threshold sweep |
 # MAGIC | **Compare** | 11 | Programmatic side-by-side of all runs |
-# MAGIC | **Optimize** | 12–13 | (Optional) GEPA automated prompt optimization + conditional promotion |
+# MAGIC | **Optimize** | 12–13 | (Optional) GEPA automated prompt optimization (3-way split) + conditional promotion |
 # MAGIC | **Ship** | 14 | Next steps: pipeline integration, production monitoring |
 # MAGIC
 # MAGIC The notebook is **idempotent**: run it top-to-bottom any number of times and you
@@ -282,37 +282,63 @@ for _, r in balance.iterrows():
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Section 3 — Train / eval split (for GEPA)
+# MAGIC ## Section 3 — Train / validation / test split (3-way)
 # MAGIC
-# MAGIC When running automated prompt optimization (GEPA, Section 12), we need a **held-out
-# MAGIC eval split** that the optimizer never sees — otherwise it memorizes the training
-# MAGIC examples rather than learning the task. For manual tuning (the primary loop), you
-# MAGIC evaluate on the **full** dataset since you're making generalizable edits, not fitting
-# MAGIC to data.
+# MAGIC When running automated prompt optimization (GEPA, Section 12), we need **two**
+# MAGIC held-out splits — not just one:
+# MAGIC
+# MAGIC | Split | Purpose | Who sees it |
+# MAGIC |-------|---------|-------------|
+# MAGIC | **Train** (~70%) | What GEPA optimizes against | GEPA |
+# MAGIC | **Validation** (~15%) | Picks the winning prompt among GEPA candidates | GEPA (for selection, so it's "used up") |
+# MAGIC | **Test** (~15%) | Final honest check — truly untouched | **Nobody until final eval** |
+# MAGIC
+# MAGIC **Why 3 splits, not 2?** The validation set is compromised by *selection*:
+# MAGIC repeatedly choosing the prompt that scores best on it can overfit to that set, even
+# MAGIC though GEPA didn't directly train on it. The test set is the only truly independent
+# MAGIC assessment. Think of it as "train is for learning, validation is for choosing, test
+# MAGIC is for believing."
+# MAGIC
+# MAGIC For **manual tuning** (the primary loop), you still evaluate on the **full** dataset
+# MAGIC — you're making generalizable edits informed by rationales, not fitting to data.
 # MAGIC
 # MAGIC The split is **deterministic** (hash-based, seeded) so it is reproducible across
-# MAGIC re-runs. We validate that every label appears in both splits.
+# MAGIC re-runs. We validate that every label appears in all three splits.
 
 # COMMAND ----------
 
 SPLIT_SEED = 42
-EVAL_FRACTION = 0.30  # 30% held out for GEPA validation
+VALIDATION_FRACTION = 0.15  # 15% held out for GEPA selection ("used up" by choosing)
+TEST_FRACTION = 0.15        # 15% held out for final honest eval (never seen by GEPA)
+# Remaining ~70% is the train split.
 
 def _split_hash(opportunity_id, seed=SPLIT_SEED):
     """Deterministic assignment: 0.0–1.0 from a hash of (seed, id)."""
     h = hashlib.md5(f"{seed}:{opportunity_id}".encode()).hexdigest()
     return int(h[:8], 16) / 0xFFFFFFFF
 
+def _assign_split(h):
+    if h < TEST_FRACTION:
+        return "test"
+    elif h < TEST_FRACTION + VALIDATION_FRACTION:
+        return "validation"
+    else:
+        return "train"
+
 gt_pd["_split_val"] = gt_pd["opportunity_id"].apply(_split_hash)
-gt_pd["split"] = gt_pd["_split_val"].apply(lambda h: "eval" if h < EVAL_FRACTION else "train")
+gt_pd["split"] = gt_pd["_split_val"].apply(_assign_split)
 
 train_pd = gt_pd[gt_pd["split"] == "train"].copy()
-eval_split_pd = gt_pd[gt_pd["split"] == "eval"].copy()
+validation_pd = gt_pd[gt_pd["split"] == "validation"].copy()
+test_pd = gt_pd[gt_pd["split"] == "test"].copy()
 
-print(f"Train: {len(train_pd)} rows | Eval (held-out): {len(eval_split_pd)} rows")
+print(f"Train: {len(train_pd)} rows | Validation: {len(validation_pd)} rows | Test (untouched): {len(test_pd)} rows")
+print(f"  Train     → GEPA optimizes against this")
+print(f"  Validation→ GEPA selects the best prompt candidate using this")
+print(f"  Test      → final honest eval AFTER GEPA finishes (never seen during optimization)")
 
-# Validate label coverage in both splits
-for split_name, split_df in [("train", train_pd), ("eval", eval_split_pd)]:
+# Validate label coverage in all three splits
+for split_name, split_df in [("train", train_pd), ("validation", validation_pd), ("test", test_pd)]:
     present = {c for c in CODE_PREFIXES if split_df["expected_set"].apply(lambda s: c in s).any()}
     missing = set(CODE_PREFIXES) - present
     if missing:
@@ -320,6 +346,13 @@ for split_name, split_df in [("train", train_pd), ("eval", eval_split_pd)]:
               f"(consider adjusting SPLIT_SEED or adding more ground-truth rows)")
     else:
         print(f"  ✓ {split_name} split covers all {len(CODE_PREFIXES)} labels")
+
+# At small n, warn about split viability
+min_split = min(len(train_pd), len(validation_pd), len(test_pd))
+if min_split < 10:
+    print(f"\n  ⚠ SMALLEST SPLIT HAS ONLY {min_split} ROWS. The 3-way split is meaningful")
+    print(f"    only once total n ≥ ~100. At current n={N_ROWS}, GEPA results will be noisy.")
+    print(f"    Manual tuning (which evaluates on the FULL dataset) is more reliable for now.")
 
 # COMMAND ----------
 
@@ -836,16 +869,17 @@ else:
 # MAGIC **`optimize_prompts()`** uses the Genetic-Pareto (GEPA) optimizer to automatically
 # MAGIC evolve your prompt text. It is powerful but dangerous:
 # MAGIC
-# MAGIC * It **requires a held-out eval split** (Section 3) — otherwise it memorizes the
-# MAGIC   training examples.
+# MAGIC * It uses a **3-way split** (Section 3): train for optimization, validation for
+# MAGIC   selecting the best candidate, and test for the final honest check.
 # MAGIC * It **optimizes the INSTRUCTIONS only** — descriptions are the structured routing
 # MAGIC   rules and should be edited manually (GEPA would break their contrastive structure).
 # MAGIC * Each GEPA iteration calls `ai_classify` per-row via SQL — this is **slow and
 # MAGIC   costly** (train_size × max_metric_calls × per_call_cost). Budget accordingly.
 # MAGIC
-# MAGIC **When to use this:** once your eval set has ~100+ rows per split and manual tuning
-# MAGIC has plateaued. **When NOT to use this:** small eval sets, or when the errors are in
-# MAGIC label *boundaries* (those need contrastive description edits, not instruction rewrites).
+# MAGIC **When to use this:** once your eval set has ~200+ total rows (~30+ per label per
+# MAGIC split) and manual tuning has plateaued. **When NOT to use this:** small eval sets,
+# MAGIC or when the errors are in label *boundaries* (those need contrastive description
+# MAGIC edits, not instruction rewrites).
 # MAGIC
 # MAGIC > Set the `run_gepa` widget to `true` to enable this section.
 
@@ -899,7 +933,10 @@ if RUN_GEPA:
         codes = [c[:2] for c in (result.pred_codes or [])]
         return {"codes": codes}
 
-    # Build train & eval data in GEPA's required format (inputs + expectations).
+    # Build train, validation, and test data in GEPA's required format.
+    # - Train: GEPA evolves the prompt against this.
+    # - Validation: GEPA selects the best candidate using this ("used up" by selection).
+    # - Test: final honest check AFTER optimization finishes (GEPA never sees this).
     train_data_gepa = [
         {
             "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
@@ -907,12 +944,19 @@ if RUN_GEPA:
         }
         for _, r in train_pd.iterrows()
     ]
-    eval_data_gepa = [
+    validation_data_gepa = [
         {
             "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
             "expectations": {"expected_codes": list(r.expected_codes)},
         }
-        for _, r in eval_split_pd.iterrows()
+        for _, r in validation_pd.iterrows()
+    ]
+    test_data_gepa = [
+        {
+            "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
+            "expectations": {"expected_codes": list(r.expected_codes)},
+        }
+        for _, r in test_pd.iterrows()
     ]
 
     # Custom objective: micro-F1 over the scored rows.
@@ -926,7 +970,7 @@ if RUN_GEPA:
         _, _, f1 = prf(tp, fp, fn)
         return Feedback(value=f1, rationale=f"row micro-F1={f1:.2f}")
 
-    print(f"GEPA ready: {len(train_data_gepa)} train rows, {len(eval_data_gepa)} eval rows.")
+    print(f"GEPA ready: {len(train_data_gepa)} train, {len(validation_data_gepa)} validation, {len(test_data_gepa)} test rows.")
     print("Starting optimization — this may take a while (one SQL call per row per iteration)...")
 
     try:
@@ -954,15 +998,71 @@ if RUN_GEPA:
         )
         print(f"\n✓ Registered optimized instructions as v{optimized_prompt.version}")
 
-        # Now evaluate the GEPA result on the HELD-OUT eval split for honest comparison
+        # --- Evaluate GEPA result on the UNTOUCHED TEST split for honest comparison ------
+        # The validation split was "used up" by GEPA's selection process. Only the test
+        # split gives a truly independent assessment.
         optimized_config = {"labels": LABELS, "instructions": optimized_template, "options": AI_OPTIONS}
         optimized_hash = hashlib.sha256(
             json.dumps(optimized_config, sort_keys=True).encode()
         ).hexdigest()[:16]
-        # Cache the optimized config's predictions
+
+        # Cache the optimized config's predictions (full dataset for completeness)
         classify_and_cache(optimized_config, optimized_hash)
-        print(f"✓ GEPA-optimized config cached (hash={optimized_hash}). "
-              "Compare against the baseline in the Experiments UI or Section 11.")
+
+        # Run evaluate() on the TEST split only
+        _gepa_cache = spark.sql(f"""
+          SELECT opportunity_id, pred_codes, pred_confidences, pred_rationales
+          FROM {CACHE_TABLE} WHERE config_hash = '{optimized_hash}'
+        """).collect()
+        _GEPA_PREDS = {
+            r["opportunity_id"]: list(zip(r["pred_codes"] or [], r["pred_confidences"] or []))
+            for r in _gepa_cache
+        }
+        _GEPA_RATS = {
+            r["opportunity_id"]: (r["pred_rationales"] or [])
+            for r in _gepa_cache
+        }
+
+        @mlflow.trace
+        def gepa_test_predict_fn(opportunity_id, transcript_text):
+            """Cache lookup for GEPA-optimized predictions."""
+            pairs = _GEPA_PREDS.get(opportunity_id, [])
+            codes = [c[:2] for (c, conf) in pairs if (conf is None or conf >= CONFIDENCE_THRESHOLD)]
+            confidences = [conf for (c, conf) in pairs if (conf is None or conf >= CONFIDENCE_THRESHOLD)]
+            rationales = _GEPA_RATS.get(opportunity_id, [])
+            return {"codes": codes, "confidences": confidences, "rationales": rationales}
+
+        with mlflow.start_run(run_name=f"{RUN_LABEL}_gepa_test_split") as gepa_test_run:
+            mlflow.log_params({
+                "config_hash": optimized_hash,
+                "confidence_threshold": CONFIDENCE_THRESHOLD,
+                "n_eval_rows": len(test_data_gepa),
+                "split": "test (untouched by GEPA)",
+                "source": "GEPA-optimized",
+                "gepa_initial_score": gepa_result.initial_eval_score,
+                "gepa_final_score": gepa_result.final_eval_score,
+            })
+            mlflow.log_dict(optimized_config, "prompt_config.json")
+
+            gepa_test_result = mlflow.genai.evaluate(
+                data=test_data_gepa,
+                predict_fn=gepa_test_predict_fn,
+                scorers=SCORERS,
+            )
+
+        print(f"\n{'='*60}")
+        print(f"  GEPA HONEST TEST-SPLIT EVALUATION")
+        print(f"  (this split was NEVER seen during optimization)")
+        print(f"{'='*60}")
+        print(f"  GEPA train score      : {gepa_result.initial_eval_score:.3f} → {gepa_result.final_eval_score:.3f}")
+        print(f"  Test-split metrics    :")
+        for k, v in sorted((gepa_test_result.metrics or {}).items()):
+            print(f"    {k}: {v}")
+        print(f"\n  ⚠ Compare the test-split numbers against the baseline's FULL-dataset")
+        print(f"    numbers with caution — different denominators. The key question is:")
+        print(f"    did GEPA find a GENERALIZABLE improvement, or did it overfit?")
+        print(f"\n✓ GEPA-optimized config cached (hash={optimized_hash}).")
+        print(f"  Compare runs in the Experiments UI or Section 11.")
 
     except Exception as e:
         print(f"⚠ GEPA failed: {type(e).__name__}: {e}")
@@ -1014,12 +1114,15 @@ else:
 # MAGIC
 # MAGIC ### 1. Grow and curate the labeled set
 # MAGIC Your eval-set size sets the **ceiling** on how much you can trust *any* result.
+# MAGIC The 3-way split (Section 3) means each label needs coverage in **all three**
+# MAGIC partitions. Here are the targets:
 # MAGIC
-# MAGIC | Code | Target (min usable) |
-# MAGIC |------|---------------------|
-# MAGIC | empty / no-blocker | ~40–50% of total |
-# MAGIC | each of 4A–4F | ~10–15 positives each |
-# MAGIC | **total** | **~150–300** |
+# MAGIC | | Total | Train (~70%) | Validation (~15%) | Test (~15%) |
+# MAGIC |---|---|---|---|---|
+# MAGIC | **Minimum pilot (GEPA)** | **200–400** | 140–280 | 30–60 | 30–60 |
+# MAGIC | **Recommended** | **1,000–2,000** | 700–1,400 | 150–300 | 150–300 |
+# MAGIC | **Per label (each split)** | | 30–50+ | 20–30+ | 20–30+ |
+# MAGIC | empty / no-blocker | ~50% of total | Preserve natural prevalence | Same | Same |
 # MAGIC
 # MAGIC Because the eval table is a managed dataset, growth is cheap:
 # MAGIC ```python
