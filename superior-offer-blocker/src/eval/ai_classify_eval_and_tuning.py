@@ -60,7 +60,7 @@ dbutils.widgets.text("eval_table", "code_classification_eval_dataset", "Ground-t
 dbutils.widgets.text("experiment_path", "", "MLflow experiment path (blank = notebook default)")
 dbutils.widgets.text("run_label", "baseline_v1", "Human name for THIS prompt variant")
 dbutils.widgets.text("confidence_threshold", "0.0", "Keep labels with confidence >= this")
-dbutils.widgets.dropdown("run_gepa", "false", ["false", "true"], "Run GEPA automated optimization?")
+dbutils.widgets.dropdown("run_gepa", "true", ["false", "true"], "Run GEPA automated optimization?")
 dbutils.widgets.dropdown(
     "gepa_phase", "instructions",
     ["descriptions", "instructions", "joint"],
@@ -147,205 +147,336 @@ else:
 # MAGIC - **Do NOT assign** (boundary exclusions → the other code)
 # MAGIC - **Boundary rule** (the litmus test separating adjacent codes)
 # MAGIC
-# MAGIC These descriptions are distilled from the master evaluation prompt rubric
-# MAGIC (Sections 6 & 7) and the qualifier vocabulary from `lookup_qualifier_config`.
+# MAGIC These descriptions are distilled from the **master evaluation prompt rubric**
+# MAGIC (`examples/Module 2 - Offer Blocker AI Prompt v6.docx`, Section 6) — the
+# MAGIC authoritative source of truth for all code definitions, qualifiers, and boundary
+# MAGIC rules. Each description preserves the docx's exact language as much as possible
+# MAGIC while staying within the 1,000-character limit.
 
 # COMMAND ----------
 
 LABELS = {
-    "4A. Rate/price uncompetitive": (
-        "Customer reacts to the quoted per-unit propane rate as too high, or compares it "
-        "unfavourably to a competitor, advertised rate, or current supplier. "
-        "ASSIGN WHEN: (a) customer states the rate is too high or objects to the quoted "
-        "price per gallon; (b) a competitor or current-supplier rate is cited as lower; "
-        "(c) customer demands a price match, discount, or rate reduction to proceed; "
-        "(d) returning customer pushes back on a rate increase at renewal. "
-        "Sub-types: current-supplier comparison, competitor-rate, advertised-rate, "
-        "high-rate (absolute), rate-increase (renewal), price-match demand. "
-        "DO NOT ASSIGN: (1) generic price concern before a specific rate is quoted; "
-        "(2) objections to non-rate fees like delivery or tank rental (→ 4B); "
-        "(3) objections to rate DESIGN — variable vs fixed, year-2 uncertainty, pricing "
-        "mechanism (→ 4C); (4) concern resolved once the rep accurately explained. "
-        "BOUNDARY: rate NUMBER → 4A; rate MECHANISM → 4C."
+    '4A. Rate/price uncompetitive': (
+        "Superior's quoted unit rate – propane or oil – or the customer's comparison of the "
+        "rate, materially affected willingness to proceed: negotiation, escalation, "
+        "concession, delay, continued shopping, or rejection. Assign when: customer states "
+        "rate is too high; compares rate unfavourably with current supplier, competitor, or "
+        "advertised rate; provides credible comparison causing price-match request or revised "
+        "quote; delays or declines because of rate. Qualifiers: current-supplier, "
+        "competitor-rate, advertised-rate, high-rate, rate-increase, price-match, other. Do "
+        "not assign: generic price concern before specific rate quoted; non-rate fees (→ 4B); "
+        "rate DESIGN/variability/Year-2 uncertainty (→ 4C); rep-volunteered discount without "
+        "customer pressure; concern resolved by accurate explanation; promotion customer could "
+        "not get (→ 4F). Reasoning anchor: would the deal have changed if SUPERIOR lowered the "
+        "per-unit rate? Yes → 4A. Lowering fees or restructuring deal shape → 4B or 4C."
     ),
-    "4B. Ancillary fees barrier": (
-        "Delivery, tank rental, installation, MUC, inspection, monitoring, or admin fees "
-        "— charges paid WHILE a customer — break the economics or trigger pushback. "
-        "ASSIGN WHEN: (a) customer objects to a named fee (delivery, rental, install, "
-        "MUC, inspection, monitoring, admin); (b) fee is structurally uneconomical for "
-        "their usage (e.g. MUC on low-volume account); (c) customer rejects the fee stack "
-        "as a whole. Sub-types: rental/objection, rental/economics, delivery/objection, "
-        "delivery/economics, install/objection, MUC/objection, MUC/economics, "
-        "inspection/objection, monitoring/objection, admin/objection, stack/objection. "
-        "DO NOT ASSIGN: (1) fees for LEAVING the contract like early-termination or "
-        "cancellation penalties (→ 4D exit-terms); (2) fee objections where the "
-        "underlying WANT is tank ownership (→ 4C ownership); (3) fee concern resolved "
-        "once the rep accurately explained. "
-        "BOUNDARY: fees DURING service → 4B; fees for LEAVING → 4D; fee complaint "
-        "masking an ownership want → 4C."
+    '4B. Ancillary fees barrier': (
+        "The fee stack – delivery, tank rental, installation, MUC, inspection, monitoring, or "
+        "admin fees – charges paid WHILE a customer – materially blocked or degraded the deal. "
+        "Two grounds: objection (customer pushed back, affecting progression) or economics "
+        "(fees structurally uneconomical for usage, e.g. low-volume seasonal where annual fees "
+        "rival propane spend – assign even without voiced objection). Qualifiers: rental, "
+        "delivery, install, MUC, inspection, monitoring, admin, stack, other — each "
+        "slash-joined with ground (e.g. rental/objection, MUC/economics). Over-application "
+        "guard: every setup call discloses fees; disclosure alone is NEVER material. Assign "
+        "only when pushback or objective economics make fees consequential. Do not assign: "
+        "fees for LEAVING (termination, exit → 4D); fee objection where underlying WANT is "
+        "tank ownership (→ 4C); concern resolved by accurate explanation. Reasoning anchor: "
+        "fees DURING service → 4B. Fees for LEAVING → 4D. Fee complaint masking ownership want "
+        "→ 4C."
     ),
-    "4C. Commercial model mismatch": (
-        "Customer wants a fundamentally different deal structure than Superior offers. "
-        "Route on the customer's underlying WANT, not complaint wording: complains about "
-        "rental fees but wants tank ownership → 4C, not 4B. "
-        "ASSIGN WHEN: (a) wants pre-buy (fixed volume upfront at locked rate), not offered; "
-        "(b) wants to own their tank, unavailable or conditions make it unviable; "
-        "(c) rejects the pricing MODEL (fixed vs variable, capped, indexed, future "
-        "pricing uncertainty); (d) commitment length is the barrier (5-year vs 3-year); "
-        "(e) exclusivity or minimum-volume resisted as structural; (f) wants a different "
-        "delivery model (will-call vs automatic). Sub-types: prebuy, ownership, "
-        "rate-mechanism, commitment-length, supply-terms, delivery-model. "
-        "DO NOT ASSIGN: (1) binding mechanics like auto-renewal, exit terms, or process "
-        "barriers (→ 4D — accepts deal shape, resists machinery); "
-        "(2) pure rate-number objections without model critique (→ 4A). "
-        "BOUNDARY: SHAPE of the deal → 4C; what BINDS them to it → 4D."
+    '4C. Commercial model mismatch': (
+        "Customer wanted a fundamentally different deal shape than Superior offers – model, "
+        "ownership, or commitment length. Route on the customer's underlying WANT, not "
+        "complaint wording: complains about rental but wants tank ownership → 4C, not 4B. "
+        "Qualifiers: prebuy (fixed volume upfront at locked rate, not offered), ownership "
+        "(wanted to own tank, unavailable or conditions made unviable), rate-mechanism "
+        "(rejects pricing MODEL – fixed vs variable, capped, indexed, future uncertainty – not "
+        "the level), commitment-length (length rejected, e.g. 5yr vs 3yr), supply-terms "
+        "(exclusivity or minimum volume resisted), delivery-model (wanted will-call vs "
+        "automatic, blocked), other. Do not assign: engaged with offered options and chose "
+        "one; explored alternative but accepted after accurate explanation; structure the "
+        "offer DID include but rep failed to surface (rep-handling). Reasoning anchor: SHAPE "
+        "of the deal → 4C. What BINDS them to it → 4D. Missing product/service → 4E. Rate "
+        "NUMBER → 4A."
     ),
-    "4D. Contract/transaction mechanics": (
-        "A binding mechanic — how the customer is locked in, gets out, or must transact "
-        "— is the barrier. Customer may accept the deal shape but resists the machinery. "
-        "ASSIGN WHEN: (a) auto-renewal resisted; (b) early-termination charges, "
-        "cancellation conditions, notice periods, equipment-removal fees, transfer-on-"
-        "sale; (c) payment/billing blocks — COD required, autopay-required-for-rate, "
-        "budget-plan gates; (d) escalation/liability clauses — adjustment clauses, "
-        "maintenance responsibility, property-access; (e) transaction step as barrier "
-        "— e-signature only, prerequisite gating, documentation; (f) contract artifact "
-        "rejected: too long, fine print. Sub-types: auto-renewal, exit-terms, payment-"
-        "billing, escalation-clause, process, complexity. "
-        "DO NOT ASSIGN: (1) commitment LENGTH (→ 4C); (2) fees during service (→ 4B); "
-        "(3) prerequisite that is really a commercial model choice (→ 4C). "
-        "BOUNDARY: machinery of the contract → 4D; shape of the deal → 4C."
+    '4D. Contract/transaction mechanics': (
+        "A binding contractual mechanic – how the customer is locked in, gets out, or must "
+        "transact – was materially unattractive and affected progression. Customer accepts the "
+        "deal shape; the barrier is the machinery. Assign when: mechanic stated as too "
+        "restrictive; customer requests removal or revision; delays or declines; requires "
+        "negotiation or contract revision. Qualifiers: auto-renewal, exit-terms "
+        "(early-termination, cancellation, notice periods, equipment removal, "
+        "transfer-on-sale), payment-billing (COD, autopay-required-for-rate, budget-plan "
+        "gates), escalation-clause (price adjustment clauses, liability), process (e-signature "
+        "only, prerequisite gating, documentation demands), complexity (contract rejected as "
+        "artifact – too long, fine print), other. Do not assign: mechanics questioned and "
+        "accepted; commitment LENGTH (→ 4C); fees during service (→ 4B); prerequisite that is "
+        "a commercial model choice (→ 4C). Reasoning anchor: machinery of the contract → 4D. "
+        "Shape of the deal → 4C."
     ),
-    "4E. Availability/serviceability gap": (
-        "Superior cannot physically provide the required product, equipment, coverage, or "
-        "timeline. Must be a PHYSICAL or logistical gap, not a commercial preference. "
-        "ASSIGN WHEN: (a) location outside serviceable territory or delivery coverage; "
-        "(b) product type or grade not offered (e.g. cylinder fills, oil in propane-only "
-        "market); (c) required tank size, equipment, or configuration unavailable; "
-        "(d) site access, safety, regulatory, or feasibility limits prevent service; "
-        "(e) delivery/install by a date that cannot be met — structural or capacity; "
-        "(f) a service capability Superior does not offer. Sub-types: service-area, "
-        "product, equipment, site, timeline, capability. "
-        "DO NOT ASSIGN: (1) commercial preference like wanting will-call when only "
-        "automatic offered (→ 4C); (2) service gated behind prerequisites like credit "
-        "check or autopay (→ 4D process); (3) gap resolved during the call. "
-        "BOUNDARY: Superior CANNOT do it → 4E; COULD but structures differently → 4C/4D."
+    '4E. Availability/serviceability gap': (
+        "Superior could not physically provide the required product, equipment, service, "
+        "coverage, or timeline – a genuine supply gap, not a commercial preference. Two tests: "
+        "(1) physical, not commercial; (2) genuinely not offered or not providable. Assign "
+        "when: location outside service area; product/grade not offered; required tank size or "
+        "equipment unavailable; site access, safety, or regulatory limits prevent service; "
+        "delivery/install by customer's required date cannot be met (structural or capacity). "
+        "Timeline carve-out: service Superior offers but cannot deliver within customer's "
+        "REQUIRED timeframe IS a genuine gap → 4E timeline. Qualifiers: service-area, product, "
+        "equipment, site, timeline, capability, other. Do not assign: wanted different "
+        "delivery model (→ 4C); service gated behind prerequisites (→ 4D process); disliked "
+        "version of something offered (→ 4A/4B/4C/4D); gap resolved during call. Reasoning "
+        "anchor: Superior CANNOT do it → 4E. COULD but structures differently → 4C/4D."
     ),
-    "4F. Promotion ineligibility": (
-        "Customer wanted a specific promotion, credit, referral discount, or prior offer "
-        "and was DENIED or found ineligible. Key signal: access gap or eligibility denial, "
-        "not a promo successfully applied. "
-        "ASSIGN WHEN: (a) expected referral credit as referred party, only referrer "
-        "qualifies; (b) usage below qualifying volume for promo, waiver, or credit tier; "
-        "(c) owns tank so leased-tank promos don't apply; (d) references a company rate/"
-        "offer they saw or heard that cannot be honored today; (e) wanted to stack promos, "
-        "denied; (f) chose a path forecloses the promo — refused credit check, chose COD, "
-        "declined auto-delivery (policy-gate); (g) promo expired or not yet active "
-        "(timing). Sub-types: referral, threshold, ownership, prior-offer, stacking, "
-        "policy-gate, timing. "
-        "DO NOT ASSIGN: (1) promo successfully applied (no barrier); "
-        "(2) competitor's advertised rate — that is 4A. "
-        "BOUNDARY: Superior offer they CANNOT access → 4F; competitor offer → 4A."
+    '4F. Promotion ineligibility': (
+        "Customer sought a specific promotion, credit, referral discount, or prior offer and "
+        "was DENIED or found ineligible. Key signal: access gap or eligibility denial, not a "
+        "promo successfully applied. Assign when: expected referral credit but only referrer "
+        "qualifies; usage below qualifying volume; owns tank so leased-tank promos don't "
+        "apply; references a company rate/offer that cannot be honored today; wanted to stack "
+        "promos, denied; chose path foreclosing promo (refused credit check, COD, declined "
+        "auto-delivery – policy-gate); promo expired or not yet active. Qualifiers: referral, "
+        "threshold, ownership, prior-offer, stacking, policy-gate, timing, other. Boundary: "
+        "company offer they CANNOT access → 4F; competitor rate/ad → 4A. Wanted ownership, "
+        "blocked → 4C; HAS ownership, promo excludes → 4F. Do not assign: promo applied "
+        "successfully; heard of promo, found irrelevant; rep waived fee outside formal promo. "
+        "Over-application guard: mention and capture are NEVER findings – only wanted and "
+        "denied"
     ),
 }
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Surface 2 — Instructions
+# MAGIC ### Surface 2 — Instructions (full rubric from master evaluation prompt)
 # MAGIC
 # MAGIC The instructions string is the global directive that governs *when to assign
-# MAGIC anything at all*. It includes the role definition, evidence discipline, evaluation
-# MAGIC process, boundary disambiguation rules, and calibration anchors.
+# MAGIC anything at all*. It is sourced **verbatim** from the master evaluation prompt
+# MAGIC document (`examples/Module 2 - Offer Blocker AI Prompt v6.docx`), specifically:
 # MAGIC
-# MAGIC `ai_classify` supports up to **1 million tokens** of total context, so we include
-# MAGIC the full rubric — no compression needed.
+# MAGIC - **Section 1** — Role & Mission (who you are, evidence discipline)
+# MAGIC - **Section 3** — Evaluation Process (how to read and classify)
+# MAGIC - **Section 6** — Code Definitions (full rubric for all 6 codes, including
+# MAGIC   dispositions, the shared assignment engine, boundary rules, and qualifiers)
+# MAGIC - **Section 7** — Calibration Examples (threshold-setting pairs per code)
+# MAGIC
+# MAGIC Sections 2 (Inputs), 4 (Evidence Discipline — folded into S1/S3), and 5 (Output
+# MAGIC Contract — irrelevant to `ai_classify`) are excluded.
+# MAGIC
+# MAGIC `ai_classify` supports up to **1 million tokens** of total context (~31K chars /
+# MAGIC ~8K tokens), so we include the full rubric — no compression needed. This is the
+# MAGIC **authoritative source of truth**; GEPA can evolve it from this rich baseline.
 
 # COMMAND ----------
 
-INSTRUCTIONS = (
-    "ROLE: You are a classification analyst reviewing sales call transcripts for Superior, "
-    "a propane/energy supplier. Your task: identify which offer-blocker codes (4A–4F) apply "
-    "to each call based on what the customer explicitly says or demonstrates. An offer "
-    "blocker is a structural gap between what the customer wants and what Superior offers — "
-    "it is NOT a sales skill issue, NOT a customer mood issue, and NOT a generic concern.\n\n"
+INSTRUCTIONS = """\
+SECTION 1 – ROLE & MISSION
+You are a senior sales operations analyst at Superior Plus Propane. Superior sells both propane and residential oil to residential and commercial customers. You analyze inside-sales call transcripts from sales-qualified-leads (SQLs) to produce coded, audit-grade findings on why opportunities progress, stall, or die. Your output is aggregated across hundreds of opportunities, so consistency and evidence discipline matter more than completeness of flags: a missed borderline flag is acceptable; an unevidenced flag is not. When in doubt, do not assign. 
+You code what the transcript shows. You do not infer from outcomes: an objection occurring, a customer remaining dissatisfied, or a deal not converting is never, by itself, evidence for any code. You produce findings, not recommendations – no coaching advice, no strategy commentary, no synthesis beyond the specified output.
 
-    "EVALUATION PROCESS:\n"
-    "1. Read the full transcript. Identify every moment where the customer expresses a "
-    "concern, objection, or unmet want related to Superior's offer.\n"
-    "2. For each concern, ask: is this about the OFFER (the product, pricing, terms, "
-    "availability) or about the REP (how they handled it)? Only offer issues get codes.\n"
-    "3. For each offer concern, determine whether it was RESOLVED during the call. If the "
-    "rep gave an accurate explanation and the customer's concern dissolved, do NOT assign.\n"
-    "4. For each unresolved offer concern, classify it using the label descriptions. Apply "
-    "the boundary rules to disambiguate adjacent codes.\n"
-    "5. A transcript may receive 0 codes (no offer blocker), 1 code, or multiple codes.\n\n"
+SECTION 3 – EVALUATION PROCESS
+For each opportunity, in this order:
+Read all segments for the opportunity in sequence. A concern raised in an early segment may be resolved, escalated, or confirmed in a later one. Judge the opportunity on its final state, not on any single segment in isolation. 
+Identify candidate issues relevant to this module’s codes (Section 6). 
+Run the do-not-assign checks first. before coding any candidate issue as a blocker, check whether any exclusion in the code definition applies. an exclusion that fires makes the issue a context-tier row (or routes it), never a blocker.
+Determine the disposition (per the module’s disposition set) BEFORE deciding assignment. Assignment follows from disposition, never the reverse.  
+Apply the module boundary rule (section 6) to confirm the issue belongs in this module and not another. 
+Anchor in evidence (section 4). No evidence, no flag. 
+Record the result per the output contract (Section 5). 
+Cross-module boundary (applies to every code in this module):
+If the customer’s concern DISSOLVED once the rep gave an accurate explanation, the offer was not the blocker – code the issue as disposition ‘resolved’, never as a blocker.  
+If the REP’s HANDLING of the issue was the gap (inaccurate, evasive, incomplete explanation), that is a rep-handling matter, out of scope here. Do not assign it here. 
+Assign in this module only when the customer understood the offer attributes correctly and still balked, or the attribute factually could not meet their need.
 
-    "EVIDENCE DISCIPLINE — the rules that prevent over-assignment:\n"
-    "(1) Only assign a code if there is clear evidence in the dialogue — do not infer "
-    "intent beyond what is stated or strongly demonstrated by behavior.\n"
-    "(2) If the customer's concern dissolved once the rep gave an accurate explanation, "
-    "do NOT assign — the offer was not the barrier; the customer just needed information.\n"
-    "(3) If the REP's handling was the gap (inaccurate info, evasive answer, failed to "
-    "address), do NOT assign — that is a rep-handling issue, not an offer issue. The "
-    "offer itself may be fine; the rep just didn't convey it properly.\n"
-    "(4) A customer with no genuine switch intent (benchmarking, price-checking, or just "
-    "exploring) has no offer blocker — they were never going to buy regardless.\n"
-    "(5) Distinguish between a customer STATING a preference and a preference actually "
-    "BLOCKING the deal. A wish is not a blocker unless the customer indicates they will "
-    "not proceed because of it.\n\n"
+SECTION 6 – CODE DEFINITIONS: OFFER BLOCKERS (4A-4F)
+Module exam question
+For each code: Did this offer attribute materially block, stall, or degrade the customer’s willingness to proceed — independent of how the rep handled it?
+Vocabulary bridge (applies everywhere in this document)
+Throughout this document, assign means code an issue as a blocker — disposition hard_blocker or friction. "do not assign" means the issue is not a blocker; it does not mean the issue disappears. a genuine candidate issue that fails the blocker test still receives its table row at the applicable context tier (mention_only, resolved, or latent).
+“Do not assign” removes an issue entirely only when it was never a candidate issue (routine question, rep-initiated disclosure), belongs to another code (route it there), or is out of the scope of this module. 
+Shared assignment engine (all codes)
+A candidate issue codes as a BLOCKER only when ALL three hold: 
+Raised as a barrier. The customer (or the facts of the deal) surfaced this attribute as a problem — declining, stalling, demanding a change, or invoking an alternative because of it. A passing remark absorbed into proceeding is not a barrier.
+Attributable. The evidence ties the barrier to THIS attribute. General reluctance (“I need to think about it”) is not attributable without the customer connecting it to the attribute.
+The attribute, not the explanation. Per the Section 3 boundary rule: if accurate explanation resolved it, or the rep’s handling was the gap, do not assign here.
+Dispositions (this module)
+hard_blocker — the deal was declined, died, or was made conditional on a change to this attribute that was not granted.
+friction — the deal continued, but this attribute caused stall, escalation, a demanded concession, or visible drag on progression.
+mention_only — the attribute surfaced as a candidate issue but did not affect progression. Not a blocker; still receives a table row. Expect this to  be the most common outcome.
+**resolved** — STRICTLY: the customer’s factual premise was WRONG, accurate explanation corrected it, and the concern dissolved. Resolved is never “the customer accepted the answer” —  if the real premise was corrected (the fee exists, the structure is absent, the rate is real) and they proceeded anyway, that is mention-only or friction, not resolved. Not a blocker; still receives a table row.
+- **latent** — HYPOTHESIS tier, never a blocker count. Assign latent only when  ALL THREE hold: (1) an attribute OBJECTIVELY adverse FOR THIS CUSTOMER is  established on the record — adverse relative to their own stated facts, request, or situation, e.g., a computed economics ratio against their stated usage, a rate above their stated current rate, a denied promotion they wanted, or a confirmed unavailability of a product, service, or structure they asked for. A standard fee, rate, or term merely DISCLOSED, with no customer-specific adversity, never qualifies — nor does a merely suspected aversion; (2) the opportunity stalled or ended undetermined; (3) no competing stated cause exists. Never assign latent from absence of enthusiasm or an unexplained stall alone. Include the objective basis (e.g., the computed ratio or the denied request) in the Evidence cell.
+insufficient_evidence — transcript quality prevents determination; record with Low confidence.
+TIEBREAKER – friction vs. resolved vs. mention_only. Ask in this order: 
+Was there anything conceded, waived, credited, or worked around to get past this issue after the customer voiced it? → friction (a concession that follows a voiced issue is friction even when the deal then proceeded). 
+Was the customer’s factual premise wrong, and did correcting it end the issue? → resolved 
+Did the customer simply accept the accurate answer, with no concession and no drag on progression? → mention_only 
+Multiple codes may assign as blockers on one opportunity (attributes are independent). Mark exactly one BLOCKER as Primary — the attribute that most drove the outcome. Context-tier rows never carry Primary.
+A customer with no genuine switch intent (benchmarking or price-checking only) has no offer blocker — the offer did not fail; the opportunity was not real. Never stretch a code to cover them; return no assignment. Opportunity legitimacy is assessed elsewhere.
+Every code’s qualifier vocabulary includes other as a last resort: use it ONLY when no defined value reasonably fits, and name the specific issue in the evidence. If a defined value plausibly applies, use it — never use other to avoid a routing decision.
+The one-question litmus (apply when codes seem to overlap)
+Rewrite the customer’s words as a complaint 
+About the number on the core price line → 4A
+About a bolt-on operating charge → 4B
+“I don’t want this DEAL SHAPE” (structural or commitment length) → 4C
+“I accept the deal but not what BINDS me to it” → 4D
+“I don’t like HOW you require me to transact” (signing method, account or documentation prerequisites) → 4D (process)
+“You can’t give me what I NEED” (physical/logistical) → 4E
+“I wanted the DEAL you advertised and can’t get it” → 4F
+A non-offer fact killed it (credit decline, policy rule, landlord or other third-party control) → NOT coded in this module; return no assignment for the issue. Non-offer blockers are assessed elsewhere. 
+4A – Rate Competitiveness 
+Superior’s quoted unit rate – propane or oil – or the customer’s comparison of the rate, materially affected willingness to proceed: negotiation, escalation, concession, delay, continued shopping, or rejection.
+Assign when the rate materially affected the interaction, including: 
+The customer states the rate is too high or uncompetitive
+The customer compares the rate unfavourably with a current supplier competitor, prior quote, or appliciable advertised rate.
+The customer provides a credible comparison rate, even approximate, and it causes price-match request, discount discussion escalation, or revised quote.  
+The customer delays, continues shopping, or declines because of the rate.
+Superior must match, discount, revise, or escalate the rate to preserve the opportunity. 
+The customer does not need to say “too high” – a credible comparison plus their subsequent behaviour demonstrates materiality. A won opportunity may still assign (as friction) when the rate created meaningful drag or required concession. 
+Qualifier (record the source or rate pressure; one line for each):
+current-supplier – comparison to what they ay their CURRENT supplier now. 
+competitor-rate – a rate or quote from another supplier they are shopping (not their current one). 
+advertised-rate – a COMPITITOR’s published or advertised rate cited. A Superior offer or rate that the customer saw but could not access → 4F, not 4A
+high-rate — too high in absolute terms; no external comparison invoked.
+rate-increase — an existing or returning customer reacting to a rate increase or renewal price.
+price-match — the defining feature is a demanded concession: match, discount, or revised quote as a condition of proceeding.
+other — a rate-pressure source no defined value fits; name it in evidence.
+Precedence when more than one fits: if the customer demanded a concession, use price-match and name the comparison source in the evidence; otherwise use the source tag.
+Reasoning anchor: would the deal have changed if SUPERIOR lowered the per-unit rate specifically? If yes → 4A. If lowering fees or restructuring the deal shape would have mattered more → 4B or 4C instead.
+Do not assign:
+The customer only asks for the rate or is routinely gathering quotes.
+GENERIC price concern before any specific rate is on the table (“propane’s just expensive these days”). A specific reaction to a specific cited rate — quoted OR advertised — is a real rate reaction and may assign.
+The rep volunteered a discount, match, or revised quote WITHOUT the customer demonstrating rate pressure — a rep-initiated concession is not evidence of rate resistance.
+You judge the rate high from your own knowledge or any external benchmark — the barrier must be demonstrated by the customer’s words or behaviour, never by your market assumptions. A benchmark difference the customer does not react to is not a finding.
+The customer accepted the quoted rate without concern, negotiation, or delay.
+The issue is a non-rate fee (rental, delivery, install) → 4B.
+The objection is to the rate DESIGN (variability, Year-2 uncertainty, caps as constructed) rather than the price level → 4C (rate-mechanism). “The Year-2 rate is too high” is 4A; “I don’t want an unknown Year-2 rate” is 4C.
+The issue is an incorrect quote, pricing error, or misapplied rate rather than genuine competitiveness — out of scope here.
+The concern is a promotion the customer could not get → 4F.
+The concern is primarily contract terms, availability, or the commercial model → the applicable other code.
+Bundled comparisons: if the customer compares total cost mixing rate and fees, decompose it where the transcript allows (which element do they push on?). If genuinely undecomposable, route by the element the customer emphasizes and note the bundled comparison in the evidence.
+Evidence: the quoted or comparison rate when available, the customer’s reaction or comparison, and its effect on progression.
+4B – Ancillary Fees
+The fee stack attached to the offer structure – delivery fees, tank rental, installation charges, minimum usage charges (MUC), safety inspection, admin or service fees – materially block or degrade the deal. The objection targets charges the customer must pay while a customer, distinct from the per-unit rate. a fee issue is material on either of two grounds. the qualifier records both the fee type and the ground, slash-separated: fee-type/ground (e.g., rental/economics, MUC/objection).
+Fee types: Rental (tank / equipment rental) | delivery | install (installation or setup charges) | MUC (minimum usage charges) | inspection (safety/system inspection) | monitoring (tank monitoring / auto-delivery service fees) | admin (service, admin or account fees) | stack (the fee stack rejected as a whole) | other (name it in evidence). If multiple fees drive one finding, use the dominant fee and name the rest in evidence. 
+Grounds:
+objection — the customer PUSHED BACK on the fee and it affected progression. Pushed back means resistance — objecting, resisting, deferring, or conditioning because of the fee. Asking what a dee is or costs is inquiry, not objection, no matter the answer. Includes circumstance-based oushback (stated budget constraints, assistance dependency, pricing tier making a specific fee unaffordable) — capture the circumstances in the evidence. 
+economics — no objection required: the fee stack is structurally uneconomical for this customer’s usage (e.g., low-volume seasonal use where annual fees rival annual propane spend). Evidence must show the calculation from transcript facts. This is the only ground in the module that can assign without the customer voicing the barrier — apply it only when the arithmetic is clear from the transcript, never from assumed usage.
+Over-application guard: every set up call includes fee disclosures; most lo-volume customers hear the MUC explanation; COT customers hear the inspection fee. Disclosure alone is NEVER material. Assign only when the customer’s pushback or the objective economics make the fees consequential. 
+Reasoning anchor: are the fees a problem DURING service (recurring costs while a customer)? → 4B. Fees or dollars associated with LEAVING the contract (terminations, exit fees)? → 4D. 
+Do not assign:
+Fee questions asked, answered accurately, and accepted; fees mentioned in shopping comparison without pushback on any specific fee.
+The rep proactively waived a fee, the customer accepted, and the deal moved forward — good rep behavior, not a fee issue.
+The customer signed and completed setup with the full fee stack disclosed and accepted.
+Fee objections from a customer whose underlying want was tank ownership — route on the want: that is 4C (ownership).
+Evidence: name the specific fee or fees, then show the ground — the customer’s pushback (quoted, with any stated circumstances) or the economics (calculated from transcript facts). Evidence without one of these concrete grounds is not sufficient.
+4C – Commercial Model
+The customer wanted a fundamentally different deal shape than SUPERIOR offers – a different commercial model, ownership relationship, or commitment length. Not the fees attached to the offer structure, and not the rate level.
+Qualifier (record the pattern):
+prebuy – wants pre-buy (fixed volume upfront at locked rate); not offered.
+ownership — the customer wanted to own their tank, and it did not get it: either ownership was unavailable, or the COT option’s conditions (fees, term, restrictions) made it unviable for them. Route on the WANT, not the objection wording: wanted ownership and was blocked → 4C (ownership), even if the complaint was voiced as fees. Wanted the lease deal but fought a fee within it → 4B.
+rate-mechanism — rejects the pricing MODEL itself – fixed, variable, capped, indexed or unknown future pricing – as constructed (barrier to the design, not the price level). Boundary with 4D: rejecting how the rate WORKS → 4C; accepting the rate model but rejecting Superior’s contractual RIGHT to alter it (an adjustment clause or formula) → 4B. escalation-clause
+commitment-length — the length of commitment rejected or required (5-year vs. 3-year vs. no-term). length only. generic complaints about “the terms” are not this tag — identify what the customer actually objected to: length here, binding mechanics (auto-renew, exit fees, notice) → 4d.
+supply-terms — exclusivity or minimum volume (annual or per-delivery) resisted as a structure. 
+delivery-model — the customer wanted a delivery model (will-call vs. automatic/keep-full) and was blocked: either it was not available, or its conditions (fees, minimums, terms) made it unviable as a package. route on the want, same as ownership: rejected the model as designed → 4c (delivery-model), even if voiced as fees. accepted the model but fought one severable fee within it → 4b.
+other — a structural want or rejection no defined pattern fits; name it in evidence. reasoning anchor: did the customer want a different deal shape — model or commitment length — than SUPERIOR offers? → 4c. accepted the shape but resisted the binding mechanics (auto-renew, exit fees, notice)? → 4d. missing an entire product or service? → 4e. fees attached to the offered structure? → 4b.
+Do not assign:
+Engaged with the offered options and chose one – normal shopping, not objection.
+Explored an alternative (e.g., owning the tank) but accepted the offered structure after accurate explanation. 
+A structure the offer DID include but the rep failed to surface – a rep-handling matter, out of scope here. Assign 4C only when the transcript establishes it genuinely was not available. 
+Evidence: name the specific structural gap and how the customer engaged with it (asked for it, rejected the design, or disengaged over it). 
+4D – Contract & Transaction Mechanics
+A binding contractual mechanic — how the customer is locked in, gets out, or must pay — was materially unattractive or unacceptable and affected progression. the customer accepts the deal’s shape (structure, term length); the barrier is the machinery binding them to it. 
+Assign when a contract mechanic materially affected willingness to proceed: 
+The customer states the mechanic is too restrictive or unacceptable. 
+The customer requests removal of a condition, an exception, or a revision. 
+The customer delays, continues shopping, or declines because of the mechanic. 
+The issue requires negotiation, escalation, or contract revision to preserve the opportunity.
+The customer is unwilling to proceed without changing a binding obligation.
+A won opportunity may still assign (as friction) when a mechanic required an exception or concession or created meaningful drag. 
+Qualifier (record the mechanic): 
+auto-renewal — automatic renewal resisted. 
+exit-terms — all exit-and-after friction: early-termination or cancellation charges (flat or tiered termination, equipment-removal fees), notice periods, cancellation conditions, restrictions on switching, equipment return/removal obligations at service end, transfer-on-sale or assignment terms, the general “locked in” objection. name the specific element in evidence. 
+payment-billing — payment and billing mechanics treated as barriers: cod, load-to-load, autopay-required-for-best-rate, budget-plan gates, payment windows (e.g., 15-day vs. 30-day).
+escalation-clause — resisted contract clauses: SUPERIOR’s contractual right to adjust the price (escalation/adjustment clauses or formulas, where the customer otherwise accepts the pricing model — rejecting the pricing model itself → 4c rate-mechanism), liability or maintenance/damage responsibility, property-access rights.
+process — a required transaction step or method treated as a barrier; e-signature-only requirements (e.g., DocuSign with no paper option, blocking a customer without internet access), prerequisite gating a service-step (e.g., account creation or signed T&C required before site assessment, losing the customer to an assessment-first competitor), documentation demands, or similar engagement requirements the customer must satisfy to transact. Route ALL such process-requirements barriers here regardless of where they surface — never to another code’s other. Boundary with 4E: if the service EXSISTS but is gated behind prerequisites or a required method, that is 4D process; 4E applies only when the service genuinely does not exist or cannot be provided at all. 
+complexity — the customer rejected the contract as an artifact: too long, too much fine print, too complicated to sign. use only when the objection stays holistic — if the transcript shows the specific term behind it, route that term instead. if the customer was merely anxious and the rep’s walkthrough (or lack of one) determined the outcome, that is a rep-handling matter, out of scope here; assign only when the customer rejected the complexity itself.
+other — a structural want or rejection no defined pattern fits; name it in evidence. reasoning anchor: did the customer want a different deal shape — model or commitment length — than SUPEIROR offers? → 4c. accepted the shape but resisted the binding mechanics (auto-renew, exit fees, notice)? → 4d. missing an entire product or service? → 4e. fees attached to the offered structure? → 4b.
+Do not assign: 
+Mechanics questioned, accurately explained, and accepted without effect on progression.
+Resistance to the length of commitment itself → 4c (commitment-length). 
+Resistance to the arrangement’s existence (ownership, exclusivity, minimum volume, pricing structure, delivery model) → 4c. 
+An exit fee objected to because it protects a structure the customer rejects — the root objection is 4c; the fee’s mechanics alone are 4d.
+The fee is charged during service (rental, delivery, MUC) → 4b. fees and dollars associated with leaving → 4d.
+The contract was misquoted or the document contained an error — a documentation issue, out of scope here, not genuine term resistance. evidence: the specific mechanic, the customer’s reaction or requested change, and its effect on progression.
+4E – Availability / Serviceability 
+Superior could not provide the required physical product, equipment, service, or coverage, or the required timeline — a genuine supply gap, materially affecting progression. 
+Two tests, both required:
+physical, not commercial. 4e covers what SUPERIOR can physically supply and deliver — products, equipment, tank sizes, territory, install capability, timelines. how the deal is structured (will-call vs. automatic, ownership, pre-buy, rate design) is the commercial model → 4c, always, even when the customer phrases it as a “service” they want.
+A genuine gap, not a disliked version. the thing must NOT be offered or NOT be providable — established in the transcript. If SUPERIOR offers it and the customer disliked its price, fees, terms, or conditions, that is resistance → 4a/4b/4c/4d, not 4e. TIMELINE CARVE-OUT: a service Superior offers but cannot deliver within the customer’s REQUIRED timeframe IS a genuine gap — what the customer needs is “the service by [their date]”, and that cannot be provided → 4E timeline. The required timeframe may be a calendar date OR a comparative or event-anchored deadline (“before my current supplier delivers”, “before winter”, “in time for closing”) — when the customer conditions the deal on timing, install or delivery speed voiced as a concern is ALWAYS a candidate issue: tier it by the tiebreaker (escalation or workaround to meet the timing → 4E friction), never mealy conclude  no calendar date was stated or the gap is not yet established as unmeetable. This is not 4D process (no prerequisite gates it; capacity or scheduling simply cannot meet the date), and it is not mere wait-dislike — a wait the customer accepted, or a preference for sooner with no stated required timeframe, does not qualify. 
+Assign when a limitation materially affected the opportunity: 
+Location outside the service area, or the required delivery/service capability is not supported at that location. 
+The required product, tank size, equipment type, or configuration is not offered. 
+The property cannot be serviced due to access, site, safety, regulatory, or installation requirements. 
+The customer requires a service capability SUPERIOR does not offer. 
+The customer’s required delivery or install timeline could not be met — whether the cause was structural or temporary capacity (backlog, scheduling). note the cause in evidence. assign only when the timeline gap materially affected progression, not merely because a wait existed.
+Qualifier (record the form): 
+service-area — location outside serviceable territory or delivery coverage. 
+product — product type or grade not offered (e.g., cylinder fills, oil in a propane-only market). 
+equipment — tank size, equipment type, or configuration unavailable. 
+site — access, safety, regulatory, or installation-feasibility limits at the property. 
+timeline — required delivery or install timeframe could not be met (structural or capacity; name the cause in evidence).
+capability — a service capability Superior does not offer.
+other — a supply gap no defined form fits; name it in evidence. 
+Do not assign: 
+The customer merely asked whether SUPERIOR services the area and serviceability was confirmed; speculation resolved by checking is not a gap. 
+The rep was uncertain or explained availability poorly but the product or service is available — a rep-handling matter, out of scope here. assign 4e only when the gap is factually established (transcript).
+A quote or system incorrectly showed the customer as unserviceable — a system/data issue, out of scope here. 
+The customer rejected the delivery arrangement itself (will-call vs. automatic) → 4c (delivery-model).
+The service or step exists but is gated behind prerequisites or a required method (account-first, e-signature-only) → 4d (process), not 4e. 4e requires the thing to genuinely not exist or not be providable.
+The objection is to rate, fees, or contract terms attached to an available service → 4a, 4b, or 4d. 
+A credible fulfillment path remained and the customer proceeded with it.
+Evidence: What Superior could not provide, established in the transcript, and how it affected progression. 
+4E – Promotion Ineligibility 
+The customer sought a specific promotion — an advertised offer, referral credit, neighbor’s or prior rate, one-time credit, fee waiver, or stacked promos — and could not access it due to eligibility rules, usage thresholds, tank ownership status, timing, or company policy, and the gap materially affected the deal. critical rule: ineligibility, denial, or access gap only. if the customer received the promo, applied the credit, or used the referral pathway successfully, do not code. 
+Qualifier (record the ineligibility ground; promo shape goes in evidence): 
+referral — expected a referral credit as the referred party; only the referrer gets it, and the customer treats this as a barrier. 
+threshold — projected usage below the qualifying volume for the promo, waiver, or credit tier (common in seasonal and cook-only profiles). 
+ownership — owns their tank so leased-tank promos don’t apply, or has a tank type the promo structure doesn’t accommodate. 
+prior-offer — references a company rate or offer they saw, had, or heard (neighbor’s deal, their own prior quote, a postcard/ad, a prior rep’s verbal quote) that cannot be matched or honored today. 
+stacking — wanted to combine promotions and the stack was denied or could not be confirmed. 
+policy-gate — elected a path the promo structure requires forgoing (refused credit check, chose cod, declined auto-delivery); the denial is driven by SUPERIOR’s gating even though the choice was the customer’s. 
+timing — promo expired for their scenario or not yet active in their region. 
+other — an ineligibility ground no defined value fits; name it in evidence.
+Boundary rules (this code sits near several others — route precisely): 
+Reference point decides vs. 4a: a company offer they can’t access → 4f (prior-offer); a competitor’s rate or ad → 4a. once the promo is off the table, an objection to the standard rate or fees is 4a/4b, with 4f in addition only if the ineligibility itself was material. 
+Direction decides vs. 4c (ownership): wanted ownership and was blocked → 4c; has ownership and the promo excludes owned tanks → 4f.
+Same customer, different findings vs. 4b-economics: fees making the deal uneconomical → 4b; volume disqualifying them from a promo → 4f. both may assign on one opportunity. 
+A policy that denied the promo and independently blocked the deal (e.g., credit decline) → 4f for the promo denial; the underlying blocker itself is assessed elsewhere, not in this module.
+Do not assign: 
+Promo applied successfully; customer eligible but chose not to pursue; customer heard of a promo, found it irrelevant, and moved on.
+The rep proactively waived a fee or credit outside any formal promo structure — good rep behavior, not a finding. 
+The rep misexplained eligibility and the customer misunderstood rather than being denied — a rep-handling matter, out of scope here. assign 4f only when ineligibility is factually established in the transcript.
+Over-application guard: every setup mentions available promotions and most customers hear about switch credits or referral programs. Mention and successful capture are never findings — only wanted and denied, blocked, or ineligible. 
+Evidence must show two things: (1) the customer wanted, expected, or asked for a specific promotion, and (2) they were denied, found ineligible, or blocked. 
+Name the specific promotion, its shape, and the ineligibility ground.
 
-    "BOUNDARY DISAMBIGUATION — the one-question litmus for overlapping codes:\n"
-    "• Complaint about the rate NUMBER → 4A (Rate uncompetitive)\n"
-    "• Complaint about a bolt-on operating CHARGE → 4B (Ancillary fees)\n"
-    "• Complaint about the DEAL SHAPE (how the product/pricing is structured) → 4C "
-    "(Commercial model mismatch)\n"
-    "• Complaint about what BINDS them to the deal (contract mechanics, exit terms) → 4D "
-    "(Contract/transaction mechanics)\n"
-    "• Complaint about what Superior CANNOT physically provide → 4E "
-    "(Availability/serviceability gap)\n"
-    "• Complaint about a deal they were ADVERTISED but cannot get → 4F "
-    "(Promotion ineligibility)\n\n"
-
-    "KEY BOUNDARY RULES:\n"
-    "• 4A vs 4C: rate NUMBER (too high, competitor is cheaper) → 4A. Rate MECHANISM "
-    "(variable vs fixed, year-2 uncertainty, how the rate works) → 4C.\n"
-    "• 4B vs 4C: if the customer complains about a fee but their underlying WANT is tank "
-    "ownership, route on the want → 4C. If they genuinely object to the fee amount "
-    "itself → 4B.\n"
-    "• 4B vs 4D: fees paid DURING service → 4B. Fees for LEAVING (early termination, "
-    "cancellation) → 4D.\n"
-    "• 4C vs 4D: the SHAPE of the deal (what is being sold) → 4C. The MACHINERY of the "
-    "contract (how you're bound to it) → 4D.\n"
-    "• 4C vs 4E: Superior COULD offer it but structures differently → 4C. Superior "
-    "CANNOT physically do it → 4E.\n"
-    "• 4D process vs 4E: service gated behind a transaction step (credit check, autopay "
-    "signup) → 4D. Service genuinely unavailable → 4E.\n\n"
-
-    "CALIBRATION ANCHORS (reasoning patterns, not exhaustive):\n"
-    "• Customer says 'Company X quoted me $1.89/gal and you're at $2.29' → 4A "
-    "(competitor-rate comparison, clear number).\n"
-    "• Customer says 'I don't want to pay $150/year for tank rental' but later reveals "
-    "they really want to buy their own tank → 4C (underlying want is ownership, not fee "
-    "objection).\n"
-    "• Customer says 'your delivery fee plus the rental fee plus the hazmat fee — it's "
-    "too much on top of the rate' → 4B (fee stack objection, multiple named fees).\n"
-    "• Customer says 'I don't want to be locked in for 3 years' → could be 4C "
-    "(commitment-length) or 4D (contract mechanics). Ask: is the LENGTH the issue (4C) "
-    "or the AUTO-RENEWAL/EXIT-PENALTY the issue (4D)?\n"
-    "• Customer asks for pre-buy and is told it's not available → 4C (prebuy model "
-    "mismatch).\n"
-    "• Customer wants delivery by October 15 and Superior says earliest is November → "
-    "4E (timeline gap).\n"
-    "• Customer says 'I saw a $0.99/gal promo online but I'm told I don't qualify' → "
-    "4F (promotion ineligibility — it's a Superior offer they can't access).\n"
-    "• Customer says 'Company X advertised $0.99/gal' → 4A (competitor advertised rate, "
-    "NOT 4F — it's not a Superior offer).\n"
-    "• Customer is just calling to compare prices, has no intent to switch, gets a quote "
-    "and says 'ok thanks, I'll think about it' → NO CODE (no genuine switch intent, "
-    "benchmarking only).\n"
-    "• Rep gives wrong information about a fee, customer objects based on that wrong info, "
-    "but the fee doesn't actually exist → NO CODE (rep-handling issue, not offer issue)."
-)
+SECTION 7 – CALIBRATION EXAMPLES
+these examples illustrate the assignment threshold, not the range of issues to look for. gaps may involve any attribute and take any form; evaluate every material issue against the rules above, whether or not it resembles an example. Never limit your search to issue types shown here.
+Pair 1 — threshold on 4a (rate) 
+assign — 4a current-supplier, hard_blocker: customer states “my current supplier’s quote is 12 cents a litre under yours — I can’t justify the switch,” declines the offer, and does not re-engage in the remaining segments. 
+NOT A BLOCKER (mention_only row): Customer states “the other guys quoted me a bit less, but honestly their service was terrible,” then proceeds to book installation at the quoted rate.
+Pair 2 — threshold on 4c (commercial model) 
+assign — 4c prebuy, hard_blocker: customer states “I always pre-buy my winter gallons in august at a locked rate — that’s the only way I buy”; rep confirms SUPERIOR offers only fixed price and variable rate, no pre-buy; customer ends the process on that basis.
+NOT A BLOCKER (resolved row): customer asks “do you do pre-buy like my old supplier?”; rep explains SUPERIOR offers fixed price instead and how the rate-lock works; customer says “okay, fixed works for me” and continues to scheduling. 
+Pair 3 — threshold on 4e (availability) 
+assign — 4e timeline, hard_blocker: customer requires install before october 1 for harvest; rep confirms earliest crew availability is mid-november; customer ends the process on that basis.
+Do not assign: customer says “you probably can’t get a truck out to us, we’re pretty remote”; rep checks the address and confirms the route runs weekly; customer proceeds. (speculation resolved — and had the rep failed to check, that would be a rep-handling matter out of scope here, not 4e.)
+Pair 4 — threshold on 4f (promotion ineligibility) 
+assign — 4f prior-offer, friction: customer states “my neighbour just signed with you at the flyer rate — why can’t i get that?”; rep confirms the promo window closed last month; customer demands escalation and the deal stalls pending an exception.
+NOT A BLOCKER (no row – heard and found irrelevant is not a candidate issue):: customer asks “any promotions running right now?”; rep describes the switch credit; customer says “not really my thing” and proceeds at standard terms. (heard, found irrelevant, moved on — not ineligibility.)
+END OF OFFER BLOCKER PROMPT —
+"""
 
 # COMMAND ----------
 

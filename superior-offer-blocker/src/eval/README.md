@@ -23,6 +23,12 @@ lives in **two surfaces**:
 So a "model version" here **is** a `(descriptions + instructions + options)` bundle,
 and evaluation is just a function: `prompt_config → accuracy metrics`.
 
+All prompt content is sourced from the **master evaluation prompt**
+(`examples/Module 2 - Offer Blocker AI Prompt v6.docx`), which is the authoritative
+source of truth for code definitions, qualifiers, boundary rules, and calibration
+examples. The descriptions distill Section 6 per-code text to ≤1,000 chars each; the
+instructions include the full verbatim text of Sections 1, 3, 6, and 7 (~32K chars / ~8K tokens).
+
 Everything in the notebook follows from that:
 - **Two registered prompts** in the Prompt Registry: `offer_blocker_descriptions`
   (JSON dict) and `offer_blocker_instructions` (free text) — plus a
@@ -204,7 +210,7 @@ set a new `run_label`, and re-evaluate on the full dataset to confirm before pro
 | `experiment_path` | *(blank)* | MLflow experiment (blank = notebook default) |
 | `run_label` | `baseline_v1` | Human name for this prompt variant |
 | `confidence_threshold` | `0.0` | Keep labels with confidence ≥ this |
-| `run_gepa` | `false` | Run GEPA automated optimization? |
+| `run_gepa` | `true` | Run GEPA automated optimization? |
 | `gepa_phase` | `instructions` | Which surface(s) GEPA optimizes: `descriptions` / `instructions` / `joint` |
 
 ## Objects the notebook creates
