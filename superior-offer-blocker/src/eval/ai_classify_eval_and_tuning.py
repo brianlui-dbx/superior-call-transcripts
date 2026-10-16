@@ -6,7 +6,7 @@
 # MAGIC %md
 # MAGIC # Evaluating & Tuning the `ai_classify` Offer-Blocker Classifier
 # MAGIC
-# MAGIC **Audience:** you are new to Databricks and MLflow. This single notebook teaches
+# MAGIC This single notebook teaches
 # MAGIC you how to *think through*, *measure*, and *tune* the prompt behind an
 # MAGIC `ai_classify` call — using MLflow as the scaffolding.
 # MAGIC
@@ -28,13 +28,13 @@
 # MAGIC
 # MAGIC | Phase | Sections | What happens |
 # MAGIC |-------|----------|--------------|
-# MAGIC | **Setup** | 0–1 | Parameters, prompt config, **register prompt in Prompt Registry** |
+# MAGIC | **Setup** | 0–1 | Parameters, prompt config, **register prompts in Prompt Registry** |
 # MAGIC | **Data** | 2–3 | Load managed eval dataset, inspect class balance, train/validation/test split |
 # MAGIC | **Score** | 4–7 | Build SQL, cache predictions, run `mlflow.genai.evaluate()`, corpus metrics |
 # MAGIC | **Diagnose** | 8–10 | Error analysis, substitution matrix, decision guide + threshold sweep |
 # MAGIC | **Compare** | 11 | Programmatic side-by-side of all runs |
-# MAGIC | **Optimize** | 12–13 | (Optional) GEPA automated prompt optimization (3-way split) + conditional promotion |
-# MAGIC | **Ship** | 14 | Next steps: pipeline integration, production monitoring |
+# MAGIC | **Optimize** | 12a–12c | (Optional) GEPA automated prompt optimization — phase-gated: descriptions / instructions / joint |
+# MAGIC | **Ship** | 13–14 | Conditional promotion + next steps |
 # MAGIC
 # MAGIC The notebook is **idempotent**: run it top-to-bottom any number of times and you
 # MAGIC get the same experiment state. Expensive `ai_classify` calls are cached by a
@@ -47,41 +47,53 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -q -U "mlflow[databricks]>=3.5"
+# MAGIC %pip install -q -U "mlflow[databricks]>=3.5" "gepa>=0.0.26"
 # MAGIC %restart_python
 
 # COMMAND ----------
 
 # Widgets = the notebook's parameters. Defaults let you run interactively; a job can
 # override them. Changing a widget and re-running is how you point this at new data.
-dbutils.widgets.text("catalog", "dbw_brlui_stable", "Unity Catalog")
+dbutils.widgets.text("catalog", "dbw_brlui_stable", "Catalog")
 dbutils.widgets.text("schema", "call_transcripts_poc", "Schema")
 dbutils.widgets.text("eval_table", "code_classification_eval_dataset", "Ground-truth eval dataset")
 dbutils.widgets.text("experiment_path", "", "MLflow experiment path (blank = notebook default)")
 dbutils.widgets.text("run_label", "baseline_v1", "Human name for THIS prompt variant")
 dbutils.widgets.text("confidence_threshold", "0.0", "Keep labels with confidence >= this")
-dbutils.widgets.dropdown("run_gepa", "false", ["false", "true"], "Run GEPA automated optimization?")
+dbutils.widgets.dropdown("run_gepa", "true", ["false", "true"], "Run GEPA automated optimization?")
+dbutils.widgets.dropdown(
+    "gepa_phase", "instructions",
+    ["descriptions", "instructions", "joint"],
+    "GEPA phase: which surface(s) to optimize",
+)
+
+# COMMAND ----------
 
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 EVAL_TABLE = f"{CATALOG}.{SCHEMA}.{dbutils.widgets.get('eval_table')}"
-CACHE_TABLE = f"{CATALOG}.{SCHEMA}.ai_classify_eval_cache"
-PROMPT_NAME = f"{CATALOG}.{SCHEMA}.offer_blocker_ai_classify_prompt"
+CACHE_TABLE = f"{CATALOG}.{SCHEMA}.ai_classify_eval_cache_v3"
+DESCRIPTIONS_PROMPT_NAME = f"{CATALOG}.{SCHEMA}.offer_blocker_descriptions"
+INSTRUCTIONS_PROMPT_NAME = f"{CATALOG}.{SCHEMA}.offer_blocker_instructions"
+BUNDLE_PROMPT_NAME = f"{CATALOG}.{SCHEMA}.offer_blocker_ai_classify_prompt"
 RUN_LABEL = dbutils.widgets.get("run_label")
 CONFIDENCE_THRESHOLD = float(dbutils.widgets.get("confidence_threshold"))
 RUN_GEPA = dbutils.widgets.get("run_gepa") == "true"
+GEPA_PHASE = dbutils.widgets.get("gepa_phase")
 
-print(f"Ground truth : {EVAL_TABLE}")
-print(f"Cache table  : {CACHE_TABLE}")
-print(f"Prompt name  : {PROMPT_NAME}")
-print(f"Run label    : {RUN_LABEL}")
-print(f"Confidence τ : {CONFIDENCE_THRESHOLD}")
-print(f"Run GEPA     : {RUN_GEPA}")
+print(f"Ground truth       : {EVAL_TABLE}")
+print(f"Cache table        : {CACHE_TABLE}")
+print(f"Descriptions prompt: {DESCRIPTIONS_PROMPT_NAME}")
+print(f"Instructions prompt: {INSTRUCTIONS_PROMPT_NAME}")
+print(f"Run label          : {RUN_LABEL}")
+print(f"Confidence τ       : {CONFIDENCE_THRESHOLD}")
+print(f"Run GEPA           : {RUN_GEPA}  (phase: {GEPA_PHASE})")
 
 # COMMAND ----------
 
 import json
 import hashlib
+import uuid
 import mlflow
 
 # Point MLflow at an experiment. Blank => the notebook's own default experiment.
@@ -99,12 +111,23 @@ else:
 # MAGIC
 # MAGIC **Best practice: your prompt is a *versioned artifact*, not a string in a code
 # MAGIC cell.** We define the two tunable surfaces here, bundle them into one config, and
-# MAGIC register that config in the **MLflow Prompt Registry** — a Unity-Catalog-backed
+# MAGIC register each surface in the **MLflow Prompt Registry** — a Unity-Catalog-backed
 # MAGIC version store for prompt templates.
+# MAGIC
+# MAGIC We maintain **two registered prompts** so GEPA can optimize each surface
+# MAGIC independently:
+# MAGIC
+# MAGIC | Prompt | Content | GEPA touches it? |
+# MAGIC |--------|---------|------------------|
+# MAGIC | `offer_blocker_descriptions` | JSON dict of 6 label descriptions | Yes (phase `descriptions` or `joint`) |
+# MAGIC | `offer_blocker_instructions` | Free-text instructions string | Yes (phase `instructions` or `joint`) |
+# MAGIC
+# MAGIC Plus a **bundle prompt** (`offer_blocker_ai_classify_prompt`) that snapshots
+# MAGIC the full `(descriptions + instructions + options)` config for reproducibility.
 # MAGIC
 # MAGIC The iteration loop becomes:
 # MAGIC 1. **Edit** one surface below (descriptions *or* instructions — never both at once).
-# MAGIC 2. **Register** a new prompt version (the cell below does this automatically).
+# MAGIC 2. **Register** new prompt versions (the cell below does this automatically).
 # MAGIC 3. **Evaluate** by re-running the notebook with a new `run_label`.
 # MAGIC 4. **Compare** runs side-by-side in the Experiments UI.
 # MAGIC 5. **Promote** the winner to the `"production"` alias (Section 13).
@@ -114,34 +137,350 @@ else:
 
 # COMMAND ----------
 
-# --- Surface 1: the six label DESCRIPTIONS (edit these to fix *boundary* errors) -------
+# MAGIC %md
+# MAGIC ### Surface 1 — Label descriptions
+# MAGIC
+# MAGIC Each description is maxed out at ~1,000 characters to give `ai_classify` the
+# MAGIC richest possible routing signal. The structure for each label:
+# MAGIC - **What it means** (the core definition)
+# MAGIC - **Assign when** (key signals & sub-types)
+# MAGIC - **Do NOT assign** (boundary exclusions → the other code)
+# MAGIC - **Boundary rule** (the litmus test separating adjacent codes)
+# MAGIC
+# MAGIC These descriptions are distilled from the **master evaluation prompt rubric**
+# MAGIC (`examples/Module 2 - Offer Blocker AI Prompt v6.docx`, Section 6) — the
+# MAGIC authoritative source of truth for all code definitions, qualifiers, and boundary
+# MAGIC rules. Each description preserves the docx's exact language as much as possible
+# MAGIC while staying within the 1,000-character limit.
+
+# COMMAND ----------
+
 LABELS = {
-    "4A. Rate/price uncompetitive": "The customer reacts to the quoted per-unit rate as too high, or compares it unfavourably to a competitor or current supplier. NOT a generic price concern before a specific rate is quoted. NOT a non-rate fee (that is 4B). NOT an objection to rate DESIGN like variability or Year-2 uncertainty (that is 4C rate-mechanism).",
-    "4B. Ancillary fees barrier": "Delivery, tank rental, installation, MUC, inspection, monitoring, or admin fees — charges paid WHILE a customer — break the economics or trigger pushback. NOT fees for LEAVING the contract like early-termination (that is 4D). NOT fee objections where the underlying want is tank ownership (that is 4C).",
-    "4C. Commercial model mismatch": "The customer wants a fundamentally different deal shape (pre-buy, tank ownership, fixed vs variable pricing, commitment length, delivery model) than Superior offers. Route on the customer WANT, not the complaint wording: wanted ownership but voiced as fees is still 4C. NOT binding mechanics like auto-renewal or exit terms (that is 4D).",
-    "4D. Contract/transaction mechanics": "A binding mechanic — how the customer is locked in, gets out, or must transact — is the barrier. Includes auto-renewal, exit/cancellation terms, payment/billing terms, and process barriers (e-signature only, prerequisite gating). Customer accepts the deal shape but resists the machinery. NOT commitment length (that is 4C). NOT fees during service (that is 4B).",
-    "4E. Availability/serviceability gap": "Superior cannot physically provide the required product, equipment, coverage area, or timeline. Must be a PHYSICAL or logistical gap. Includes timeline when the customer requires delivery/install by a date that cannot be met. NOT a commercial model preference (that is 4C). NOT when service exists but is gated behind prerequisites (that is 4D).",
-    "4F. Promotion ineligibility": "The customer wanted a specific promotion, credit, referral discount, or prior offer and was DENIED or found ineligible. Must be ineligibility or access gap — NOT a promo successfully applied. A Superior offer they cannot access is 4F; a competitor advertised rate is 4A.",
+    '4A. Rate/price uncompetitive': (
+        "Superior's quoted unit rate – propane or oil – or the customer's comparison of the "
+        "rate, materially affected willingness to proceed: negotiation, escalation, "
+        "concession, delay, continued shopping, or rejection. Assign when: customer states "
+        "rate is too high; compares rate unfavourably with current supplier, competitor, or "
+        "advertised rate; provides credible comparison causing price-match request or revised "
+        "quote; delays or declines because of rate. Qualifiers: current-supplier, "
+        "competitor-rate, advertised-rate, high-rate, rate-increase, price-match, other. Do "
+        "not assign: generic price concern before specific rate quoted; non-rate fees (→ 4B); "
+        "rate DESIGN/variability/Year-2 uncertainty (→ 4C); rep-volunteered discount without "
+        "customer pressure; concern resolved by accurate explanation; promotion customer could "
+        "not get (→ 4F). Reasoning anchor: would the deal have changed if SUPERIOR lowered the "
+        "per-unit rate? Yes → 4A. Lowering fees or restructuring deal shape → 4B or 4C."
+    ),
+    '4B. Ancillary fees barrier': (
+        "The fee stack – delivery, tank rental, installation, MUC, inspection, monitoring, or "
+        "admin fees – charges paid WHILE a customer – materially blocked or degraded the deal. "
+        "Two grounds: objection (customer pushed back, affecting progression) or economics "
+        "(fees structurally uneconomical for usage, e.g. low-volume seasonal where annual fees "
+        "rival propane spend – assign even without voiced objection). Qualifiers: rental, "
+        "delivery, install, MUC, inspection, monitoring, admin, stack, other — each "
+        "slash-joined with ground (e.g. rental/objection, MUC/economics). Over-application "
+        "guard: every setup call discloses fees; disclosure alone is NEVER material. Assign "
+        "only when pushback or objective economics make fees consequential. Do not assign: "
+        "fees for LEAVING (termination, exit → 4D); fee objection where underlying WANT is "
+        "tank ownership (→ 4C); concern resolved by accurate explanation. Reasoning anchor: "
+        "fees DURING service → 4B. Fees for LEAVING → 4D. Fee complaint masking ownership want "
+        "→ 4C."
+    ),
+    '4C. Commercial model mismatch': (
+        "Customer wanted a fundamentally different deal shape than Superior offers – model, "
+        "ownership, or commitment length. Route on the customer's underlying WANT, not "
+        "complaint wording: complains about rental but wants tank ownership → 4C, not 4B. "
+        "Qualifiers: prebuy (fixed volume upfront at locked rate, not offered), ownership "
+        "(wanted to own tank, unavailable or conditions made unviable), rate-mechanism "
+        "(rejects pricing MODEL – fixed vs variable, capped, indexed, future uncertainty – not "
+        "the level), commitment-length (length rejected, e.g. 5yr vs 3yr), supply-terms "
+        "(exclusivity or minimum volume resisted), delivery-model (wanted will-call vs "
+        "automatic, blocked), other. Do not assign: engaged with offered options and chose "
+        "one; explored alternative but accepted after accurate explanation; structure the "
+        "offer DID include but rep failed to surface (rep-handling). Reasoning anchor: SHAPE "
+        "of the deal → 4C. What BINDS them to it → 4D. Missing product/service → 4E. Rate "
+        "NUMBER → 4A."
+    ),
+    '4D. Contract/transaction mechanics': (
+        "A binding contractual mechanic – how the customer is locked in, gets out, or must "
+        "transact – was materially unattractive and affected progression. Customer accepts the "
+        "deal shape; the barrier is the machinery. Assign when: mechanic stated as too "
+        "restrictive; customer requests removal or revision; delays or declines; requires "
+        "negotiation or contract revision. Qualifiers: auto-renewal, exit-terms "
+        "(early-termination, cancellation, notice periods, equipment removal, "
+        "transfer-on-sale), payment-billing (COD, autopay-required-for-rate, budget-plan "
+        "gates), escalation-clause (price adjustment clauses, liability), process (e-signature "
+        "only, prerequisite gating, documentation demands), complexity (contract rejected as "
+        "artifact – too long, fine print), other. Do not assign: mechanics questioned and "
+        "accepted; commitment LENGTH (→ 4C); fees during service (→ 4B); prerequisite that is "
+        "a commercial model choice (→ 4C). Reasoning anchor: machinery of the contract → 4D. "
+        "Shape of the deal → 4C."
+    ),
+    '4E. Availability/serviceability gap': (
+        "Superior could not physically provide the required product, equipment, service, "
+        "coverage, or timeline – a genuine supply gap, not a commercial preference. Two tests: "
+        "(1) physical, not commercial; (2) genuinely not offered or not providable. Assign "
+        "when: location outside service area; product/grade not offered; required tank size or "
+        "equipment unavailable; site access, safety, or regulatory limits prevent service; "
+        "delivery/install by customer's required date cannot be met (structural or capacity). "
+        "Timeline carve-out: service Superior offers but cannot deliver within customer's "
+        "REQUIRED timeframe IS a genuine gap → 4E timeline. Qualifiers: service-area, product, "
+        "equipment, site, timeline, capability, other. Do not assign: wanted different "
+        "delivery model (→ 4C); service gated behind prerequisites (→ 4D process); disliked "
+        "version of something offered (→ 4A/4B/4C/4D); gap resolved during call. Reasoning "
+        "anchor: Superior CANNOT do it → 4E. COULD but structures differently → 4C/4D."
+    ),
+    '4F. Promotion ineligibility': (
+        "Customer sought a specific promotion, credit, referral discount, or prior offer and "
+        "was DENIED or found ineligible. Key signal: access gap or eligibility denial, not a "
+        "promo successfully applied. Assign when: expected referral credit but only referrer "
+        "qualifies; usage below qualifying volume; owns tank so leased-tank promos don't "
+        "apply; references a company rate/offer that cannot be honored today; wanted to stack "
+        "promos, denied; chose path foreclosing promo (refused credit check, COD, declined "
+        "auto-delivery – policy-gate); promo expired or not yet active. Qualifiers: referral, "
+        "threshold, ownership, prior-offer, stacking, policy-gate, timing, other. Boundary: "
+        "company offer they CANNOT access → 4F; competitor rate/ad → 4A. Wanted ownership, "
+        "blocked → 4C; HAS ownership, promo excludes → 4F. Do not assign: promo applied "
+        "successfully; heard of promo, found irrelevant; rep waived fee outside formal promo. "
+        "Over-application guard: mention and capture are NEVER findings – only wanted and "
+        "denied"
+    ),
 }
 
-# --- Surface 2: the global INSTRUCTIONS (edit this to fix over/under-assignment) --------
-INSTRUCTIONS = (
-    "You are analyzing sales call transcripts for a propane/energy supplier (Superior) "
-    "between Superior's agent and a client. Identify which offer-blocker codes apply "
-    "based on what the client explicitly says or demonstrates through behaviour. Key "
-    "rules: (1) Only assign a code if there is clear evidence in the dialogue — do not "
-    "infer intent beyond what is stated. (2) If the customer's concern dissolved once the "
-    "rep gave an accurate explanation, do NOT assign — the offer was not the barrier. "
-    "(3) If the REP's handling was the gap (inaccurate, evasive), do NOT assign — that is "
-    "a rep-handling issue, not an offer issue. (4) A customer with no genuine switch "
-    "intent (benchmarking or price-checking only) has no offer blocker. (5) One-question "
-    "litmus for ambiguous cases: complaint about the rate number -> 4A; about a bolt-on "
-    "operating charge -> 4B; about the deal shape -> 4C; about what binds them to it -> "
-    "4D; about what Superior cannot physically provide -> 4E; about a deal they were "
-    "advertised but cannot get -> 4F."
-)
+# COMMAND ----------
 
-# --- ai_classify options (these too are part of the config we version) -----------------
+# MAGIC %md
+# MAGIC ### Surface 2 — Instructions (full rubric from master evaluation prompt)
+# MAGIC
+# MAGIC The instructions string is the global directive that governs *when to assign
+# MAGIC anything at all*. It is sourced **verbatim** from the master evaluation prompt
+# MAGIC document (`examples/Module 2 - Offer Blocker AI Prompt v6.docx`), specifically:
+# MAGIC
+# MAGIC - **Section 1** — Role & Mission (who you are, evidence discipline)
+# MAGIC - **Section 3** — Evaluation Process (how to read and classify)
+# MAGIC - **Section 6** — Code Definitions (full rubric for all 6 codes, including
+# MAGIC   dispositions, the shared assignment engine, boundary rules, and qualifiers)
+# MAGIC - **Section 7** — Calibration Examples (threshold-setting pairs per code)
+# MAGIC
+# MAGIC Sections 2 (Inputs), 4 (Evidence Discipline — folded into S1/S3), and 5 (Output
+# MAGIC Contract — irrelevant to `ai_classify`) are excluded.
+# MAGIC
+# MAGIC `ai_classify` supports up to **1 million tokens** of total context (~31K chars /
+# MAGIC ~8K tokens), so we include the full rubric — no compression needed. This is the
+# MAGIC **authoritative source of truth**; GEPA can evolve it from this rich baseline.
+
+# COMMAND ----------
+
+INSTRUCTIONS = """\
+SECTION 1 – ROLE & MISSION
+You are a senior sales operations analyst at Superior Plus Propane. Superior sells both propane and residential oil to residential and commercial customers. You analyze inside-sales call transcripts from sales-qualified-leads (SQLs) to produce coded, audit-grade findings on why opportunities progress, stall, or die. Your output is aggregated across hundreds of opportunities, so consistency and evidence discipline matter more than completeness of flags: a missed borderline flag is acceptable; an unevidenced flag is not. When in doubt, do not assign. 
+You code what the transcript shows. You do not infer from outcomes: an objection occurring, a customer remaining dissatisfied, or a deal not converting is never, by itself, evidence for any code. You produce findings, not recommendations – no coaching advice, no strategy commentary, no synthesis beyond the specified output.
+
+SECTION 3 – EVALUATION PROCESS
+For each opportunity, in this order:
+Read all segments for the opportunity in sequence. A concern raised in an early segment may be resolved, escalated, or confirmed in a later one. Judge the opportunity on its final state, not on any single segment in isolation. 
+Identify candidate issues relevant to this module’s codes (Section 6). 
+Run the do-not-assign checks first. before coding any candidate issue as a blocker, check whether any exclusion in the code definition applies. an exclusion that fires makes the issue a context-tier row (or routes it), never a blocker.
+Determine the disposition (per the module’s disposition set) BEFORE deciding assignment. Assignment follows from disposition, never the reverse.  
+Apply the module boundary rule (section 6) to confirm the issue belongs in this module and not another. 
+Anchor in evidence (section 4). No evidence, no flag. 
+Record the result per the output contract (Section 5). 
+Cross-module boundary (applies to every code in this module):
+If the customer’s concern DISSOLVED once the rep gave an accurate explanation, the offer was not the blocker – code the issue as disposition ‘resolved’, never as a blocker.  
+If the REP’s HANDLING of the issue was the gap (inaccurate, evasive, incomplete explanation), that is a rep-handling matter, out of scope here. Do not assign it here. 
+Assign in this module only when the customer understood the offer attributes correctly and still balked, or the attribute factually could not meet their need.
+
+SECTION 6 – CODE DEFINITIONS: OFFER BLOCKERS (4A-4F)
+Module exam question
+For each code: Did this offer attribute materially block, stall, or degrade the customer’s willingness to proceed — independent of how the rep handled it?
+Vocabulary bridge (applies everywhere in this document)
+Throughout this document, assign means code an issue as a blocker — disposition hard_blocker or friction. "do not assign" means the issue is not a blocker; it does not mean the issue disappears. a genuine candidate issue that fails the blocker test still receives its table row at the applicable context tier (mention_only, resolved, or latent).
+“Do not assign” removes an issue entirely only when it was never a candidate issue (routine question, rep-initiated disclosure), belongs to another code (route it there), or is out of the scope of this module. 
+Shared assignment engine (all codes)
+A candidate issue codes as a BLOCKER only when ALL three hold: 
+Raised as a barrier. The customer (or the facts of the deal) surfaced this attribute as a problem — declining, stalling, demanding a change, or invoking an alternative because of it. A passing remark absorbed into proceeding is not a barrier.
+Attributable. The evidence ties the barrier to THIS attribute. General reluctance (“I need to think about it”) is not attributable without the customer connecting it to the attribute.
+The attribute, not the explanation. Per the Section 3 boundary rule: if accurate explanation resolved it, or the rep’s handling was the gap, do not assign here.
+Dispositions (this module)
+hard_blocker — the deal was declined, died, or was made conditional on a change to this attribute that was not granted.
+friction — the deal continued, but this attribute caused stall, escalation, a demanded concession, or visible drag on progression.
+mention_only — the attribute surfaced as a candidate issue but did not affect progression. Not a blocker; still receives a table row. Expect this to  be the most common outcome.
+**resolved** — STRICTLY: the customer’s factual premise was WRONG, accurate explanation corrected it, and the concern dissolved. Resolved is never “the customer accepted the answer” —  if the real premise was corrected (the fee exists, the structure is absent, the rate is real) and they proceeded anyway, that is mention-only or friction, not resolved. Not a blocker; still receives a table row.
+- **latent** — HYPOTHESIS tier, never a blocker count. Assign latent only when  ALL THREE hold: (1) an attribute OBJECTIVELY adverse FOR THIS CUSTOMER is  established on the record — adverse relative to their own stated facts, request, or situation, e.g., a computed economics ratio against their stated usage, a rate above their stated current rate, a denied promotion they wanted, or a confirmed unavailability of a product, service, or structure they asked for. A standard fee, rate, or term merely DISCLOSED, with no customer-specific adversity, never qualifies — nor does a merely suspected aversion; (2) the opportunity stalled or ended undetermined; (3) no competing stated cause exists. Never assign latent from absence of enthusiasm or an unexplained stall alone. Include the objective basis (e.g., the computed ratio or the denied request) in the Evidence cell.
+insufficient_evidence — transcript quality prevents determination; record with Low confidence.
+TIEBREAKER – friction vs. resolved vs. mention_only. Ask in this order: 
+Was there anything conceded, waived, credited, or worked around to get past this issue after the customer voiced it? → friction (a concession that follows a voiced issue is friction even when the deal then proceeded). 
+Was the customer’s factual premise wrong, and did correcting it end the issue? → resolved 
+Did the customer simply accept the accurate answer, with no concession and no drag on progression? → mention_only 
+Multiple codes may assign as blockers on one opportunity (attributes are independent). Mark exactly one BLOCKER as Primary — the attribute that most drove the outcome. Context-tier rows never carry Primary.
+A customer with no genuine switch intent (benchmarking or price-checking only) has no offer blocker — the offer did not fail; the opportunity was not real. Never stretch a code to cover them; return no assignment. Opportunity legitimacy is assessed elsewhere.
+Every code’s qualifier vocabulary includes other as a last resort: use it ONLY when no defined value reasonably fits, and name the specific issue in the evidence. If a defined value plausibly applies, use it — never use other to avoid a routing decision.
+The one-question litmus (apply when codes seem to overlap)
+Rewrite the customer’s words as a complaint 
+About the number on the core price line → 4A
+About a bolt-on operating charge → 4B
+“I don’t want this DEAL SHAPE” (structural or commitment length) → 4C
+“I accept the deal but not what BINDS me to it” → 4D
+“I don’t like HOW you require me to transact” (signing method, account or documentation prerequisites) → 4D (process)
+“You can’t give me what I NEED” (physical/logistical) → 4E
+“I wanted the DEAL you advertised and can’t get it” → 4F
+A non-offer fact killed it (credit decline, policy rule, landlord or other third-party control) → NOT coded in this module; return no assignment for the issue. Non-offer blockers are assessed elsewhere. 
+4A – Rate Competitiveness 
+Superior’s quoted unit rate – propane or oil – or the customer’s comparison of the rate, materially affected willingness to proceed: negotiation, escalation, concession, delay, continued shopping, or rejection.
+Assign when the rate materially affected the interaction, including: 
+The customer states the rate is too high or uncompetitive
+The customer compares the rate unfavourably with a current supplier competitor, prior quote, or appliciable advertised rate.
+The customer provides a credible comparison rate, even approximate, and it causes price-match request, discount discussion escalation, or revised quote.  
+The customer delays, continues shopping, or declines because of the rate.
+Superior must match, discount, revise, or escalate the rate to preserve the opportunity. 
+The customer does not need to say “too high” – a credible comparison plus their subsequent behaviour demonstrates materiality. A won opportunity may still assign (as friction) when the rate created meaningful drag or required concession. 
+Qualifier (record the source or rate pressure; one line for each):
+current-supplier – comparison to what they ay their CURRENT supplier now. 
+competitor-rate – a rate or quote from another supplier they are shopping (not their current one). 
+advertised-rate – a COMPITITOR’s published or advertised rate cited. A Superior offer or rate that the customer saw but could not access → 4F, not 4A
+high-rate — too high in absolute terms; no external comparison invoked.
+rate-increase — an existing or returning customer reacting to a rate increase or renewal price.
+price-match — the defining feature is a demanded concession: match, discount, or revised quote as a condition of proceeding.
+other — a rate-pressure source no defined value fits; name it in evidence.
+Precedence when more than one fits: if the customer demanded a concession, use price-match and name the comparison source in the evidence; otherwise use the source tag.
+Reasoning anchor: would the deal have changed if SUPERIOR lowered the per-unit rate specifically? If yes → 4A. If lowering fees or restructuring the deal shape would have mattered more → 4B or 4C instead.
+Do not assign:
+The customer only asks for the rate or is routinely gathering quotes.
+GENERIC price concern before any specific rate is on the table (“propane’s just expensive these days”). A specific reaction to a specific cited rate — quoted OR advertised — is a real rate reaction and may assign.
+The rep volunteered a discount, match, or revised quote WITHOUT the customer demonstrating rate pressure — a rep-initiated concession is not evidence of rate resistance.
+You judge the rate high from your own knowledge or any external benchmark — the barrier must be demonstrated by the customer’s words or behaviour, never by your market assumptions. A benchmark difference the customer does not react to is not a finding.
+The customer accepted the quoted rate without concern, negotiation, or delay.
+The issue is a non-rate fee (rental, delivery, install) → 4B.
+The objection is to the rate DESIGN (variability, Year-2 uncertainty, caps as constructed) rather than the price level → 4C (rate-mechanism). “The Year-2 rate is too high” is 4A; “I don’t want an unknown Year-2 rate” is 4C.
+The issue is an incorrect quote, pricing error, or misapplied rate rather than genuine competitiveness — out of scope here.
+The concern is a promotion the customer could not get → 4F.
+The concern is primarily contract terms, availability, or the commercial model → the applicable other code.
+Bundled comparisons: if the customer compares total cost mixing rate and fees, decompose it where the transcript allows (which element do they push on?). If genuinely undecomposable, route by the element the customer emphasizes and note the bundled comparison in the evidence.
+Evidence: the quoted or comparison rate when available, the customer’s reaction or comparison, and its effect on progression.
+4B – Ancillary Fees
+The fee stack attached to the offer structure – delivery fees, tank rental, installation charges, minimum usage charges (MUC), safety inspection, admin or service fees – materially block or degrade the deal. The objection targets charges the customer must pay while a customer, distinct from the per-unit rate. a fee issue is material on either of two grounds. the qualifier records both the fee type and the ground, slash-separated: fee-type/ground (e.g., rental/economics, MUC/objection).
+Fee types: Rental (tank / equipment rental) | delivery | install (installation or setup charges) | MUC (minimum usage charges) | inspection (safety/system inspection) | monitoring (tank monitoring / auto-delivery service fees) | admin (service, admin or account fees) | stack (the fee stack rejected as a whole) | other (name it in evidence). If multiple fees drive one finding, use the dominant fee and name the rest in evidence. 
+Grounds:
+objection — the customer PUSHED BACK on the fee and it affected progression. Pushed back means resistance — objecting, resisting, deferring, or conditioning because of the fee. Asking what a dee is or costs is inquiry, not objection, no matter the answer. Includes circumstance-based oushback (stated budget constraints, assistance dependency, pricing tier making a specific fee unaffordable) — capture the circumstances in the evidence. 
+economics — no objection required: the fee stack is structurally uneconomical for this customer’s usage (e.g., low-volume seasonal use where annual fees rival annual propane spend). Evidence must show the calculation from transcript facts. This is the only ground in the module that can assign without the customer voicing the barrier — apply it only when the arithmetic is clear from the transcript, never from assumed usage.
+Over-application guard: every set up call includes fee disclosures; most lo-volume customers hear the MUC explanation; COT customers hear the inspection fee. Disclosure alone is NEVER material. Assign only when the customer’s pushback or the objective economics make the fees consequential. 
+Reasoning anchor: are the fees a problem DURING service (recurring costs while a customer)? → 4B. Fees or dollars associated with LEAVING the contract (terminations, exit fees)? → 4D. 
+Do not assign:
+Fee questions asked, answered accurately, and accepted; fees mentioned in shopping comparison without pushback on any specific fee.
+The rep proactively waived a fee, the customer accepted, and the deal moved forward — good rep behavior, not a fee issue.
+The customer signed and completed setup with the full fee stack disclosed and accepted.
+Fee objections from a customer whose underlying want was tank ownership — route on the want: that is 4C (ownership).
+Evidence: name the specific fee or fees, then show the ground — the customer’s pushback (quoted, with any stated circumstances) or the economics (calculated from transcript facts). Evidence without one of these concrete grounds is not sufficient.
+4C – Commercial Model
+The customer wanted a fundamentally different deal shape than SUPERIOR offers – a different commercial model, ownership relationship, or commitment length. Not the fees attached to the offer structure, and not the rate level.
+Qualifier (record the pattern):
+prebuy – wants pre-buy (fixed volume upfront at locked rate); not offered.
+ownership — the customer wanted to own their tank, and it did not get it: either ownership was unavailable, or the COT option’s conditions (fees, term, restrictions) made it unviable for them. Route on the WANT, not the objection wording: wanted ownership and was blocked → 4C (ownership), even if the complaint was voiced as fees. Wanted the lease deal but fought a fee within it → 4B.
+rate-mechanism — rejects the pricing MODEL itself – fixed, variable, capped, indexed or unknown future pricing – as constructed (barrier to the design, not the price level). Boundary with 4D: rejecting how the rate WORKS → 4C; accepting the rate model but rejecting Superior’s contractual RIGHT to alter it (an adjustment clause or formula) → 4B. escalation-clause
+commitment-length — the length of commitment rejected or required (5-year vs. 3-year vs. no-term). length only. generic complaints about “the terms” are not this tag — identify what the customer actually objected to: length here, binding mechanics (auto-renew, exit fees, notice) → 4d.
+supply-terms — exclusivity or minimum volume (annual or per-delivery) resisted as a structure. 
+delivery-model — the customer wanted a delivery model (will-call vs. automatic/keep-full) and was blocked: either it was not available, or its conditions (fees, minimums, terms) made it unviable as a package. route on the want, same as ownership: rejected the model as designed → 4c (delivery-model), even if voiced as fees. accepted the model but fought one severable fee within it → 4b.
+other — a structural want or rejection no defined pattern fits; name it in evidence. reasoning anchor: did the customer want a different deal shape — model or commitment length — than SUPERIOR offers? → 4c. accepted the shape but resisted the binding mechanics (auto-renew, exit fees, notice)? → 4d. missing an entire product or service? → 4e. fees attached to the offered structure? → 4b.
+Do not assign:
+Engaged with the offered options and chose one – normal shopping, not objection.
+Explored an alternative (e.g., owning the tank) but accepted the offered structure after accurate explanation. 
+A structure the offer DID include but the rep failed to surface – a rep-handling matter, out of scope here. Assign 4C only when the transcript establishes it genuinely was not available. 
+Evidence: name the specific structural gap and how the customer engaged with it (asked for it, rejected the design, or disengaged over it). 
+4D – Contract & Transaction Mechanics
+A binding contractual mechanic — how the customer is locked in, gets out, or must pay — was materially unattractive or unacceptable and affected progression. the customer accepts the deal’s shape (structure, term length); the barrier is the machinery binding them to it. 
+Assign when a contract mechanic materially affected willingness to proceed: 
+The customer states the mechanic is too restrictive or unacceptable. 
+The customer requests removal of a condition, an exception, or a revision. 
+The customer delays, continues shopping, or declines because of the mechanic. 
+The issue requires negotiation, escalation, or contract revision to preserve the opportunity.
+The customer is unwilling to proceed without changing a binding obligation.
+A won opportunity may still assign (as friction) when a mechanic required an exception or concession or created meaningful drag. 
+Qualifier (record the mechanic): 
+auto-renewal — automatic renewal resisted. 
+exit-terms — all exit-and-after friction: early-termination or cancellation charges (flat or tiered termination, equipment-removal fees), notice periods, cancellation conditions, restrictions on switching, equipment return/removal obligations at service end, transfer-on-sale or assignment terms, the general “locked in” objection. name the specific element in evidence. 
+payment-billing — payment and billing mechanics treated as barriers: cod, load-to-load, autopay-required-for-best-rate, budget-plan gates, payment windows (e.g., 15-day vs. 30-day).
+escalation-clause — resisted contract clauses: SUPERIOR’s contractual right to adjust the price (escalation/adjustment clauses or formulas, where the customer otherwise accepts the pricing model — rejecting the pricing model itself → 4c rate-mechanism), liability or maintenance/damage responsibility, property-access rights.
+process — a required transaction step or method treated as a barrier; e-signature-only requirements (e.g., DocuSign with no paper option, blocking a customer without internet access), prerequisite gating a service-step (e.g., account creation or signed T&C required before site assessment, losing the customer to an assessment-first competitor), documentation demands, or similar engagement requirements the customer must satisfy to transact. Route ALL such process-requirements barriers here regardless of where they surface — never to another code’s other. Boundary with 4E: if the service EXSISTS but is gated behind prerequisites or a required method, that is 4D process; 4E applies only when the service genuinely does not exist or cannot be provided at all. 
+complexity — the customer rejected the contract as an artifact: too long, too much fine print, too complicated to sign. use only when the objection stays holistic — if the transcript shows the specific term behind it, route that term instead. if the customer was merely anxious and the rep’s walkthrough (or lack of one) determined the outcome, that is a rep-handling matter, out of scope here; assign only when the customer rejected the complexity itself.
+other — a structural want or rejection no defined pattern fits; name it in evidence. reasoning anchor: did the customer want a different deal shape — model or commitment length — than SUPEIROR offers? → 4c. accepted the shape but resisted the binding mechanics (auto-renew, exit fees, notice)? → 4d. missing an entire product or service? → 4e. fees attached to the offered structure? → 4b.
+Do not assign: 
+Mechanics questioned, accurately explained, and accepted without effect on progression.
+Resistance to the length of commitment itself → 4c (commitment-length). 
+Resistance to the arrangement’s existence (ownership, exclusivity, minimum volume, pricing structure, delivery model) → 4c. 
+An exit fee objected to because it protects a structure the customer rejects — the root objection is 4c; the fee’s mechanics alone are 4d.
+The fee is charged during service (rental, delivery, MUC) → 4b. fees and dollars associated with leaving → 4d.
+The contract was misquoted or the document contained an error — a documentation issue, out of scope here, not genuine term resistance. evidence: the specific mechanic, the customer’s reaction or requested change, and its effect on progression.
+4E – Availability / Serviceability 
+Superior could not provide the required physical product, equipment, service, or coverage, or the required timeline — a genuine supply gap, materially affecting progression. 
+Two tests, both required:
+physical, not commercial. 4e covers what SUPERIOR can physically supply and deliver — products, equipment, tank sizes, territory, install capability, timelines. how the deal is structured (will-call vs. automatic, ownership, pre-buy, rate design) is the commercial model → 4c, always, even when the customer phrases it as a “service” they want.
+A genuine gap, not a disliked version. the thing must NOT be offered or NOT be providable — established in the transcript. If SUPERIOR offers it and the customer disliked its price, fees, terms, or conditions, that is resistance → 4a/4b/4c/4d, not 4e. TIMELINE CARVE-OUT: a service Superior offers but cannot deliver within the customer’s REQUIRED timeframe IS a genuine gap — what the customer needs is “the service by [their date]”, and that cannot be provided → 4E timeline. The required timeframe may be a calendar date OR a comparative or event-anchored deadline (“before my current supplier delivers”, “before winter”, “in time for closing”) — when the customer conditions the deal on timing, install or delivery speed voiced as a concern is ALWAYS a candidate issue: tier it by the tiebreaker (escalation or workaround to meet the timing → 4E friction), never mealy conclude  no calendar date was stated or the gap is not yet established as unmeetable. This is not 4D process (no prerequisite gates it; capacity or scheduling simply cannot meet the date), and it is not mere wait-dislike — a wait the customer accepted, or a preference for sooner with no stated required timeframe, does not qualify. 
+Assign when a limitation materially affected the opportunity: 
+Location outside the service area, or the required delivery/service capability is not supported at that location. 
+The required product, tank size, equipment type, or configuration is not offered. 
+The property cannot be serviced due to access, site, safety, regulatory, or installation requirements. 
+The customer requires a service capability SUPERIOR does not offer. 
+The customer’s required delivery or install timeline could not be met — whether the cause was structural or temporary capacity (backlog, scheduling). note the cause in evidence. assign only when the timeline gap materially affected progression, not merely because a wait existed.
+Qualifier (record the form): 
+service-area — location outside serviceable territory or delivery coverage. 
+product — product type or grade not offered (e.g., cylinder fills, oil in a propane-only market). 
+equipment — tank size, equipment type, or configuration unavailable. 
+site — access, safety, regulatory, or installation-feasibility limits at the property. 
+timeline — required delivery or install timeframe could not be met (structural or capacity; name the cause in evidence).
+capability — a service capability Superior does not offer.
+other — a supply gap no defined form fits; name it in evidence. 
+Do not assign: 
+The customer merely asked whether SUPERIOR services the area and serviceability was confirmed; speculation resolved by checking is not a gap. 
+The rep was uncertain or explained availability poorly but the product or service is available — a rep-handling matter, out of scope here. assign 4e only when the gap is factually established (transcript).
+A quote or system incorrectly showed the customer as unserviceable — a system/data issue, out of scope here. 
+The customer rejected the delivery arrangement itself (will-call vs. automatic) → 4c (delivery-model).
+The service or step exists but is gated behind prerequisites or a required method (account-first, e-signature-only) → 4d (process), not 4e. 4e requires the thing to genuinely not exist or not be providable.
+The objection is to rate, fees, or contract terms attached to an available service → 4a, 4b, or 4d. 
+A credible fulfillment path remained and the customer proceeded with it.
+Evidence: What Superior could not provide, established in the transcript, and how it affected progression. 
+4E – Promotion Ineligibility 
+The customer sought a specific promotion — an advertised offer, referral credit, neighbor’s or prior rate, one-time credit, fee waiver, or stacked promos — and could not access it due to eligibility rules, usage thresholds, tank ownership status, timing, or company policy, and the gap materially affected the deal. critical rule: ineligibility, denial, or access gap only. if the customer received the promo, applied the credit, or used the referral pathway successfully, do not code. 
+Qualifier (record the ineligibility ground; promo shape goes in evidence): 
+referral — expected a referral credit as the referred party; only the referrer gets it, and the customer treats this as a barrier. 
+threshold — projected usage below the qualifying volume for the promo, waiver, or credit tier (common in seasonal and cook-only profiles). 
+ownership — owns their tank so leased-tank promos don’t apply, or has a tank type the promo structure doesn’t accommodate. 
+prior-offer — references a company rate or offer they saw, had, or heard (neighbor’s deal, their own prior quote, a postcard/ad, a prior rep’s verbal quote) that cannot be matched or honored today. 
+stacking — wanted to combine promotions and the stack was denied or could not be confirmed. 
+policy-gate — elected a path the promo structure requires forgoing (refused credit check, chose cod, declined auto-delivery); the denial is driven by SUPERIOR’s gating even though the choice was the customer’s. 
+timing — promo expired for their scenario or not yet active in their region. 
+other — an ineligibility ground no defined value fits; name it in evidence.
+Boundary rules (this code sits near several others — route precisely): 
+Reference point decides vs. 4a: a company offer they can’t access → 4f (prior-offer); a competitor’s rate or ad → 4a. once the promo is off the table, an objection to the standard rate or fees is 4a/4b, with 4f in addition only if the ineligibility itself was material. 
+Direction decides vs. 4c (ownership): wanted ownership and was blocked → 4c; has ownership and the promo excludes owned tanks → 4f.
+Same customer, different findings vs. 4b-economics: fees making the deal uneconomical → 4b; volume disqualifying them from a promo → 4f. both may assign on one opportunity. 
+A policy that denied the promo and independently blocked the deal (e.g., credit decline) → 4f for the promo denial; the underlying blocker itself is assessed elsewhere, not in this module.
+Do not assign: 
+Promo applied successfully; customer eligible but chose not to pursue; customer heard of a promo, found it irrelevant, and moved on.
+The rep proactively waived a fee or credit outside any formal promo structure — good rep behavior, not a finding. 
+The rep misexplained eligibility and the customer misunderstood rather than being denied — a rep-handling matter, out of scope here. assign 4f only when ineligibility is factually established in the transcript.
+Over-application guard: every setup mentions available promotions and most customers hear about switch credits or referral programs. Mention and successful capture are never findings — only wanted and denied, blocked, or ineligible. 
+Evidence must show two things: (1) the customer wanted, expected, or asked for a specific promotion, and (2) they were denied, found ineligible, or blocked. 
+Name the specific promotion, its shape, and the ineligibility ground.
+
+SECTION 7 – CALIBRATION EXAMPLES
+these examples illustrate the assignment threshold, not the range of issues to look for. gaps may involve any attribute and take any form; evaluate every material issue against the rules above, whether or not it resembles an example. Never limit your search to issue types shown here.
+Pair 1 — threshold on 4a (rate) 
+assign — 4a current-supplier, hard_blocker: customer states “my current supplier’s quote is 12 cents a litre under yours — I can’t justify the switch,” declines the offer, and does not re-engage in the remaining segments. 
+NOT A BLOCKER (mention_only row): Customer states “the other guys quoted me a bit less, but honestly their service was terrible,” then proceeds to book installation at the quoted rate.
+Pair 2 — threshold on 4c (commercial model) 
+assign — 4c prebuy, hard_blocker: customer states “I always pre-buy my winter gallons in august at a locked rate — that’s the only way I buy”; rep confirms SUPERIOR offers only fixed price and variable rate, no pre-buy; customer ends the process on that basis.
+NOT A BLOCKER (resolved row): customer asks “do you do pre-buy like my old supplier?”; rep explains SUPERIOR offers fixed price instead and how the rate-lock works; customer says “okay, fixed works for me” and continues to scheduling. 
+Pair 3 — threshold on 4e (availability) 
+assign — 4e timeline, hard_blocker: customer requires install before october 1 for harvest; rep confirms earliest crew availability is mid-november; customer ends the process on that basis.
+Do not assign: customer says “you probably can’t get a truck out to us, we’re pretty remote”; rep checks the address and confirms the route runs weekly; customer proceeds. (speculation resolved — and had the rep failed to check, that would be a rep-handling matter out of scope here, not 4e.)
+Pair 4 — threshold on 4f (promotion ineligibility) 
+assign — 4f prior-offer, friction: customer states “my neighbour just signed with you at the flyer rate — why can’t i get that?”; rep confirms the promo window closed last month; customer demands escalation and the deal stalls pending an exception.
+NOT A BLOCKER (no row – heard and found irrelevant is not a candidate issue):: customer asks “any promotions running right now?”; rep describes the switch credit; customer says “not really my thing” and proceeds at standard terms. (heard, found irrelevant, moved on — not ineligibility.)
+END OF OFFER BLOCKER PROMPT —
+"""
+
+# COMMAND ----------
+
+# --- ai_classify options (part of the versioned config) --------------------------------
 AI_OPTIONS = {
     "version": "2.1",
     "multilabel": "true",
@@ -162,14 +501,26 @@ _config_blob = json.dumps(PROMPT_CONFIG, sort_keys=True, ensure_ascii=False)
 CONFIG_HASH = hashlib.sha256(_config_blob.encode("utf-8")).hexdigest()[:16]
 print(f"CONFIG_HASH = {CONFIG_HASH}  (changes whenever ANY surface changes)")
 
+# Quick sanity: check description lengths against ai_classify's 1,000-char limit.
+for label_key, desc in LABELS.items():
+    if len(desc) > 1000:
+        print(f"  ⚠ {label_key[:2]} description is {len(desc)} chars (limit 1,000) — TRUNCATE!")
+    else:
+        print(f"  ✓ {label_key[:2]} description: {len(desc)} chars")
+
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Register the config in the Prompt Registry
+# MAGIC ### Register configs in the Prompt Registry
 # MAGIC
 # MAGIC Each prompt variant becomes a **version** in the registry. The notebook checks
 # MAGIC whether the latest version already matches (idempotency) — if so, it reuses it
 # MAGIC rather than creating a duplicate.
+# MAGIC
+# MAGIC We register **three** prompts:
+# MAGIC 1. `offer_blocker_descriptions` — just the JSON dict of label descriptions (GEPA surface 1)
+# MAGIC 2. `offer_blocker_instructions` — just the instructions string (GEPA surface 2)
+# MAGIC 3. `offer_blocker_ai_classify_prompt` — the full bundle (for reproducibility & promotion)
 
 # COMMAND ----------
 
@@ -190,19 +541,42 @@ def _register_if_changed(name, template, commit_message):
     print(f"✓ Registered '{name}' as v{registered.version}: {commit_message}")
     return registered
 
-_config_template = json.dumps(PROMPT_CONFIG, ensure_ascii=False, indent=2)
 
+# --- Register descriptions prompt (GEPA surface 1) ------------------------------------
+_desc_template = json.dumps(LABELS, ensure_ascii=False, indent=2)
 try:
-    PROMPT_VERSION = _register_if_changed(
-        name=PROMPT_NAME,
+    DESC_PROMPT_VERSION = _register_if_changed(
+        name=DESCRIPTIONS_PROMPT_NAME,
+        template=_desc_template,
+        commit_message=f"{RUN_LABEL} descriptions (config_hash={CONFIG_HASH})",
+    )
+except Exception as e:
+    DESC_PROMPT_VERSION = None
+    print(f"(Descriptions prompt unavailable: {type(e).__name__}: {e})")
+
+# --- Register instructions prompt (GEPA surface 2) ------------------------------------
+try:
+    INSTR_PROMPT_VERSION = _register_if_changed(
+        name=INSTRUCTIONS_PROMPT_NAME,
+        template=INSTRUCTIONS,
+        commit_message=f"{RUN_LABEL} instructions (config_hash={CONFIG_HASH})",
+    )
+except Exception as e:
+    INSTR_PROMPT_VERSION = None
+    print(f"(Instructions prompt unavailable: {type(e).__name__}: {e})")
+
+# --- Register the FULL bundle (descriptions + instructions + options) ------------------
+_config_template = json.dumps(PROMPT_CONFIG, ensure_ascii=False, indent=2)
+try:
+    BUNDLE_PROMPT_VERSION = _register_if_changed(
+        name=BUNDLE_PROMPT_NAME,
         template=_config_template,
         commit_message=f"{RUN_LABEL} (config_hash={CONFIG_HASH})",
     )
 except Exception as e:
-    # Prompt Registry may not be available in all workspaces/MLflow versions.
-    PROMPT_VERSION = None
-    print(f"(Prompt Registry unavailable: {type(e).__name__}: {e})")
-    print("Continuing without it — the config is still hashed and logged as a run artifact.")
+    BUNDLE_PROMPT_VERSION = None
+    print(f"(Bundle prompt unavailable: {type(e).__name__}: {e})")
+    print("Continuing without Prompt Registry — config is still hashed and logged as a run artifact.")
 
 # COMMAND ----------
 
@@ -296,8 +670,7 @@ for _, r in balance.iterrows():
 # MAGIC **Why 3 splits, not 2?** The validation set is compromised by *selection*:
 # MAGIC repeatedly choosing the prompt that scores best on it can overfit to that set, even
 # MAGIC though GEPA didn't directly train on it. The test set is the only truly independent
-# MAGIC assessment. Think of it as "train is for learning, validation is for choosing, test
-# MAGIC is for believing."
+# MAGIC assessment.
 # MAGIC
 # MAGIC For **manual tuning** (the primary loop), you still evaluate on the **full** dataset
 # MAGIC — you're making generalizable edits informed by rationales, not fitting to data.
@@ -399,23 +772,36 @@ print(f"Cached rows for this config: {already} / {N_ROWS}")
 
 # COMMAND ----------
 
-def classify_and_cache(config, config_hash):
-    """Run ai_classify and persist results. Idempotent: skips if already cached."""
+def classify_and_cache(config, config_hash, input_df=None):
+    """Run ai_classify and persist results. Idempotent: skips if already cached.
+
+    Parameters
+    ----------
+    config : dict       — the full prompt config (labels + instructions + options)
+    config_hash : str   — 16-char hex hash of the config
+    input_df : pd.DataFrame, optional — if None, uses the full gt_pd
+    """
+    if input_df is None:
+        input_df = gt_pd
+    n_input = len(input_df)
+
     have = spark.sql(
         f"SELECT COUNT(*) AS n FROM {CACHE_TABLE} WHERE config_hash = '{config_hash}'"
     ).collect()[0]["n"]
-    if have >= N_ROWS:
+    if have >= n_input:
         print(f"✓ config {config_hash} already cached ({have} rows) — skipping LLM calls.")
         return
 
-    print(f"Running ai_classify for config {config_hash} over {N_ROWS} rows …")
-    _gt_spark = spark.createDataFrame(gt_pd[["opportunity_id", "transcript_text"]])
-    _gt_spark.createOrReplaceTempView("_eval_inputs")
+    print(f"Running ai_classify for config {config_hash} over {n_input} rows …")
+    # Use a unique temp view name to avoid concurrency hazards (important for GEPA)
+    view_name = f"_eval_inputs_{config_hash[:8]}"
+    _gt_spark = spark.createDataFrame(input_df[["opportunity_id", "transcript_text"]])
+    _gt_spark.createOrReplaceTempView(view_name)
     expr = build_ai_classify_expr("transcript_text", config)
 
     scored = spark.sql(f"""
       WITH raw AS (
-        SELECT opportunity_id, {expr} AS cls FROM _eval_inputs
+        SELECT opportunity_id, {expr} AS cls FROM {view_name}
       )
       SELECT
         '{config_hash}' AS config_hash,
@@ -430,9 +816,9 @@ def classify_and_cache(config, config_hash):
       FROM raw
     """)
 
-    scored.createOrReplaceTempView("_scored")
+    scored.createOrReplaceTempView(f"_scored_{config_hash[:8]}")
     spark.sql(f"DELETE FROM {CACHE_TABLE} WHERE config_hash = '{config_hash}'")
-    spark.sql(f"INSERT INTO {CACHE_TABLE} SELECT * FROM _scored")
+    spark.sql(f"INSERT INTO {CACHE_TABLE} SELECT * FROM _scored_{config_hash[:8]}")
     print(f"✓ cached {scored.count()} predictions for config {config_hash}.")
 
 classify_and_cache(PROMPT_CONFIG, CONFIG_HASH)
@@ -445,8 +831,8 @@ classify_and_cache(PROMPT_CONFIG, CONFIG_HASH)
 # MAGIC We have ground truth → compare sets with plain Python. **No LLM judge is needed.**
 # MAGIC
 # MAGIC Two kinds of measurement (knowing which is which is a core lesson):
-# MAGIC * **Row-wise** (Jaccard, exact-match, abstain, per-label hits) — MLflow `@scorer`
-# MAGIC   functions; visible per-row in the Trace UI.
+# MAGIC * **Row-wise** (Jaccard, exact-match, abstain, per-label hits, boundary confusion)
+# MAGIC   — MLflow `@scorer` functions; visible per-row in the Trace UI.
 # MAGIC * **Corpus-wide** (precision / recall / F1) — need the whole set at once; computed
 # MAGIC   in Section 7 and `log_metrics`'d into the same run.
 
@@ -500,7 +886,7 @@ def per_label_hits(outputs, expectations):
     correctness in the MLflow Trace UI — much richer than a single aggregate."""
     pred, gold = _as_set(outputs), _as_set(expectations.get("expected_codes"))
     feedbacks = []
-    for c in ["4A", "4B", "4C", "4D", "4E", "4F"]:
+    for c in CODE_PREFIXES:
         in_pred, in_gold = c in pred, c in gold
         if in_gold and in_pred:
             tag = "TP"
@@ -518,7 +904,32 @@ def per_label_hits(outputs, expectations):
     return feedbacks
 
 
-SCORERS = [jaccard, exact_match, abstained_correctly, per_label_hits]
+# --- Boundary confusion scorer --------------------------------------------------------
+# Adjacent-code pairs where description leakage causes the most damage. When the model
+# predicts one of a pair but the gold has the other, that is a BOUNDARY error — a signal
+# to edit the descriptions contrastively rather than touch instructions.
+_BOUNDARY_PAIRS = [("4A", "4C"), ("4B", "4C"), ("4B", "4D"), ("4C", "4D"), ("4C", "4E"), ("4D", "4E")]
+
+@scorer
+def boundary_confusion(outputs, expectations) -> Feedback:
+    """Penalize boundary errors between adjacent codes.
+    Returns 1.0 if no boundary confusion, 0.0 if any boundary pair is crossed.
+    A boundary error is: gold has code X, pred has code Y (or vice versa),
+    where (X,Y) is a known confusable pair."""
+    pred, gold = _as_set(outputs), _as_set(expectations.get("expected_codes"))
+    missed = gold - pred  # codes we should have assigned but didn't
+    added = pred - gold   # codes we assigned but shouldn't have
+    boundary_errors = []
+    for a, b in _BOUNDARY_PAIRS:
+        # Check if we swapped one for the other
+        if (a in missed and b in added) or (b in missed and a in added):
+            boundary_errors.append(f"{a}↔{b}")
+    if boundary_errors:
+        return Feedback(value=0.0, rationale=f"boundary confusion: {', '.join(boundary_errors)}")
+    return Feedback(value=1.0, rationale="no boundary confusion")
+
+
+SCORERS = [jaccard, exact_match, abstained_correctly, per_label_hits, boundary_confusion]
 
 # COMMAND ----------
 
@@ -578,12 +989,18 @@ with mlflow.start_run(run_name=RUN_LABEL) as run:
         "n_eval_rows": N_ROWS,
         "ai_version": AI_OPTIONS["version"],
         "multilabel": AI_OPTIONS["multilabel"],
+        "gepa_phase": GEPA_PHASE,
+        "source": "manual",
     })
-    if PROMPT_VERSION:
+    if BUNDLE_PROMPT_VERSION:
         mlflow.log_params({
-            "prompt_registry_name": PROMPT_NAME,
-            "prompt_registry_version": PROMPT_VERSION.version,
+            "prompt_registry_name": BUNDLE_PROMPT_NAME,
+            "prompt_registry_version": BUNDLE_PROMPT_VERSION.version,
         })
+    if DESC_PROMPT_VERSION:
+        mlflow.log_params({"descriptions_prompt_version": DESC_PROMPT_VERSION.version})
+    if INSTR_PROMPT_VERSION:
+        mlflow.log_params({"instructions_prompt_version": INSTR_PROMPT_VERSION.version})
     mlflow.log_dict(PROMPT_CONFIG, "prompt_config.json")
 
     eval_result = mlflow.genai.evaluate(
@@ -661,6 +1078,17 @@ mean_jaccard = float(merged.apply(lambda r: _jac(r["pred_set"], r["expected_set"
 abstain_rows = merged[merged["expected_set"].apply(len) == 0]
 abstain_acc = float((abstain_rows["pred_set"].apply(len) == 0).mean()) if len(abstain_rows) else float("nan")
 
+# Boundary confusion rate (new metric).
+n_boundary = 0
+for _, row in merged.iterrows():
+    missed = row["expected_set"] - row["pred_set"]
+    added = row["pred_set"] - row["expected_set"]
+    for a, b in _BOUNDARY_PAIRS:
+        if (a in missed and b in added) or (b in missed and a in added):
+            n_boundary += 1
+            break  # count each row at most once
+boundary_rate = n_boundary / N_ROWS if N_ROWS else 0.0
+
 display(per_label_df)
 excluded_labels = set(per_label_df[per_label_df["n_pos"] <= 2]["code"])
 excl_note = f" [excludes {sorted(excluded_labels)} n≤2]" if excluded_labels else ""
@@ -670,6 +1098,7 @@ print(f"  Micro-F1 (headline) : {micro_f1:.2f}   [pooled {micro['tp']}TP {micro[
 print(f"  Mean Jaccard        : {mean_jaccard:.2f}")
 print(f"  Abstain accuracy    : {abstain_acc:.2f}   [{int((abstain_rows['pred_set'].apply(len)==0).sum())} of {len(abstain_rows)} empty rows correct]")
 print(f"  Macro-F1 (⚠ noisy)  : {macro_f1:.2f}  {excl_note}")
+print(f"  Boundary confusion  : {boundary_rate:.0%}  ({n_boundary} of {N_ROWS} rows have a boundary swap)")
 print(f"  Exact-match         : see MLflow run (sanity stat only — brutal for multilabel)")
 print(f"\n  NOISE FLOOR: 1 row flip ≈ ~{len(CODE_PREFIXES)/pooled:.0%} micro-F1."
       " Do NOT declare a winner on a sub-1-row move.")
@@ -679,6 +1108,7 @@ with mlflow.start_run(run_id=RUN_ID):
     mlflow.log_metrics({
         "micro_f1": micro_f1, "micro_precision": micro_p, "micro_recall": micro_r,
         "macro_f1": macro_f1, "mean_jaccard": mean_jaccard, "abstain_accuracy": abstain_acc,
+        "boundary_confusion_rate": boundary_rate,
     })
     mlflow.log_table(per_label_df, "per_label_metrics.json")
 
@@ -735,7 +1165,7 @@ display(mistakes)
 # MAGIC
 # MAGIC Multilabel has **no clean confusion matrix**. What *is* useful is a **substitution
 # MAGIC matrix**: when the model is wrong, which code did it reach for instead? Hot cells on
-# MAGIC the 4A/4B/4C and 4C/4D boundaries point straight at the descriptions that leak.
+# MAGIC the 4A/4C and 4C/4D boundaries point straight at the descriptions that leak.
 
 # COMMAND ----------
 
@@ -795,11 +1225,10 @@ with mlflow.start_run(run_id=RUN_ID):
 # MAGIC > articulable reason — never because one row's number went up.*
 # MAGIC
 # MAGIC ### To iterate
-# MAGIC 1. Duplicate the config cell in Section 1.
-# MAGIC 2. Edit **one** surface.
-# MAGIC 3. Set a new `run_label` (e.g. `v2_tighten_4B_vs_4A`).
-# MAGIC 4. Re-run from Section 0. Only the new config re-scores; everything else is instant.
-# MAGIC 5. Compare runs in the Experiments UI (or Section 11 below).
+# MAGIC 1. Edit **one** surface in Section 1.
+# MAGIC 2. Set a new `run_label` (e.g. `v2_tighten_4B_vs_4A`).
+# MAGIC 3. Re-run from Section 0. Only the new config re-scores; everything else is instant.
+# MAGIC 4. Compare runs in the Experiments UI (or Section 11 below).
 
 # COMMAND ----------
 
@@ -817,8 +1246,8 @@ for tau in [0.0, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9]:
     tp = fp = fn = 0
     correct_abstain = total_abstain = 0
     for _, row in err.iterrows():
-        raw_codes = row.get("pred_codes_cache") or row.get("pred_codes") or []
-        raw_confs = row.get("pred_confidences_cache") or row.get("pred_confidences") or []
+        raw_codes = row.get("pred_codes_cache") if row.get("pred_codes_cache") is not None else (row.get("pred_codes") if row.get("pred_codes") is not None else [])
+        raw_confs = row.get("pred_confidences_cache") if row.get("pred_confidences_cache") is not None else (row.get("pred_confidences") if row.get("pred_confidences") is not None else [])
         pairs = list(zip(raw_codes, raw_confs))
         pset = {c[:2] for (c, conf) in pairs if (conf is None or conf >= tau)}
         gset = row["expected_set"]
@@ -844,14 +1273,21 @@ print("Then set the `confidence_threshold` widget to that value and re-run.")
 # MAGIC reads all runs in the current experiment and builds a comparison table. The same
 # MAGIC view is available in the MLflow Experiments UI (Metrics tab → Compare), but this
 # MAGIC gives you programmatic access for downstream decisions.
+# MAGIC
+# MAGIC **Tip:** filter by `params.source` and `params.gepa_phase` to separate manual
+# MAGIC baseline runs from GEPA-optimized runs at each phase.
 
 # COMMAND ----------
 
 _all_runs = mlflow.search_runs(order_by=["start_time DESC"])
 if len(_all_runs) > 0:
     _metric_cols = [c for c in _all_runs.columns if c.startswith("metrics.")]
-    _param_cols = ["params.run_label", "params.config_hash", "params.confidence_threshold",
-                   "params.prompt_registry_version", "params.n_eval_rows"]
+    _param_cols = [
+        "params.run_label", "params.config_hash", "params.confidence_threshold",
+        "params.prompt_registry_version", "params.n_eval_rows",
+        "params.source", "params.gepa_phase",
+        "params.descriptions_prompt_version", "params.instructions_prompt_version",
+    ]
     _keep = ["run_id"] + [c for c in _param_cols if c in _all_runs.columns] + sorted(_metric_cols)
     comparison_df = _all_runs[[c for c in _keep if c in _all_runs.columns]].head(20)
     display(comparison_df)
@@ -867,99 +1303,79 @@ else:
 # MAGIC ## Section 12 — (Optional) GEPA automated prompt optimization
 # MAGIC
 # MAGIC **`optimize_prompts()`** uses the Genetic-Pareto (GEPA) optimizer to automatically
-# MAGIC evolve your prompt text. It is powerful but dangerous:
+# MAGIC evolve your prompt text. It is powerful but carries risk:
 # MAGIC
 # MAGIC * It uses a **3-way split** (Section 3): train for optimization, validation for
 # MAGIC   selecting the best candidate, and test for the final honest check.
-# MAGIC * It **optimizes the INSTRUCTIONS only** — descriptions are the structured routing
-# MAGIC   rules and should be edited manually (GEPA would break their contrastive structure).
+# MAGIC * It can optimize **descriptions**, **instructions**, or **both jointly** — gated
+# MAGIC   by the `gepa_phase` widget.
 # MAGIC * Each GEPA iteration calls `ai_classify` per-row via SQL — this is **slow and
 # MAGIC   costly** (train_size × max_metric_calls × per_call_cost). Budget accordingly.
 # MAGIC
-# MAGIC **When to use this:** once your eval set has ~200+ total rows (~30+ per label per
-# MAGIC split) and manual tuning has plateaued. **When NOT to use this:** small eval sets,
-# MAGIC or when the errors are in label *boundaries* (those need contrastive description
-# MAGIC edits, not instruction rewrites).
+# MAGIC ### Phase strategy (recommended order)
 # MAGIC
-# MAGIC > Set the `run_gepa` widget to `true` to enable this section.
+# MAGIC | Phase | What moves | When to use |
+# MAGIC |-------|-----------|-------------|
+# MAGIC | `descriptions` | Label descriptions only | Substitution errors dominate (bucket C); instructions are already solid |
+# MAGIC | `instructions` | Instructions only | Over/under-assignment errors dominate (buckets A/B/E) |
+# MAGIC | `joint` | Both surfaces together | After single-surface phases plateau; looking for synergies |
+# MAGIC
+# MAGIC > Set the `run_gepa` widget to `true` and `gepa_phase` to your choice to enable.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Section 12a — Shared GEPA infrastructure
+# MAGIC
+# MAGIC These utilities are used by all three GEPA phases: the predict function, the
+# MAGIC scorer, the structural validator for descriptions, and the data preparation.
 
 # COMMAND ----------
 
 if RUN_GEPA:
     from mlflow.genai.optimize import GepaPromptOptimizer
 
-    # Register the INSTRUCTIONS as a separate, optimizable prompt.
-    # GEPA evolves this text; descriptions stay fixed.
-    INSTRUCTIONS_PROMPT_NAME = f"{CATALOG}.{SCHEMA}.offer_blocker_instructions"
-    try:
-        instructions_prompt = _register_if_changed(
-            name=INSTRUCTIONS_PROMPT_NAME,
-            template=INSTRUCTIONS,
-            commit_message=f"Baseline instructions for GEPA ({RUN_LABEL})",
-        )
-        print(f"Instructions prompt URI: {instructions_prompt.uri if hasattr(instructions_prompt, 'uri') else 'N/A'}")
-    except Exception as e:
-        print(f"Cannot register instructions prompt: {e}")
-        instructions_prompt = None
+    # ---- Structural validator for description candidates --------------------------------
+    def validate_descriptions_json(candidate_text):
+        """Validate that a GEPA-generated description candidate is valid JSON with exactly
+        the right 6 keys and each value ≤ 1,000 characters.
+        Returns (is_valid, error_message)."""
+        try:
+            parsed = json.loads(candidate_text)
+        except json.JSONDecodeError as e:
+            return False, f"Invalid JSON: {e}"
+        if not isinstance(parsed, dict):
+            return False, f"Expected dict, got {type(parsed).__name__}"
+        expected_keys = set(LABELS.keys())
+        actual_keys = set(parsed.keys())
+        if actual_keys != expected_keys:
+            missing = expected_keys - actual_keys
+            extra = actual_keys - expected_keys
+            return False, f"Key mismatch. Missing: {missing}. Extra: {extra}."
+        for k, v in parsed.items():
+            if not isinstance(v, str):
+                return False, f"Value for '{k}' is {type(v).__name__}, expected str."
+            if len(v) > 1000:
+                return False, f"Value for '{k[:10]}…' is {len(v)} chars (max 1000)."
+        return True, "ok"
 
-    if instructions_prompt is None:
-        print("⚠ Skipping GEPA — Prompt Registry is unavailable.")
-        RUN_GEPA = False
-else:
-    print("GEPA is OFF (set `run_gepa` widget to 'true' to enable).")
+    # ---- Build GEPA data splits --------------------------------------------------------
+    def _build_gepa_data(split_df):
+        return [
+            {
+                "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
+                "expectations": {"expected_codes": list(r.expected_codes)},
+            }
+            for _, r in split_df.iterrows()
+        ]
 
-# COMMAND ----------
+    train_data_gepa = _build_gepa_data(train_pd)
+    validation_data_gepa = _build_gepa_data(validation_pd)
+    test_data_gepa = _build_gepa_data(test_pd)
 
-if RUN_GEPA:
-    # Build the GEPA predict_fn: loads the current (GEPA-swapped) prompt version,
-    # builds ai_classify SQL, and runs it for a single row.
-    def gepa_predict_fn(opportunity_id, transcript_text):
-        prompt = mlflow.genai.load_prompt(instructions_prompt.uri)
-        current_instructions = prompt.template
-
-        config = {"labels": LABELS, "instructions": current_instructions, "options": AI_OPTIONS}
-        expr = build_ai_classify_expr("transcript_text", config)
-
-        row_df = spark.createDataFrame([(transcript_text,)], ["transcript_text"])
-        row_df.createOrReplaceTempView("_gepa_row")
-
-        result = spark.sql(f"""
-            SELECT transform(
-                ({expr}):response::ARRAY<STRUCT<value:STRING,confidence_score:DOUBLE,rationale:STRING>>,
-                x -> x.value
-            ) AS pred_codes FROM _gepa_row
-        """).collect()[0]
-
-        codes = [c[:2] for c in (result.pred_codes or [])]
-        return {"codes": codes}
-
-    # Build train, validation, and test data in GEPA's required format.
-    # - Train: GEPA evolves the prompt against this.
-    # - Validation: GEPA selects the best candidate using this ("used up" by selection).
-    # - Test: final honest check AFTER optimization finishes (GEPA never sees this).
-    train_data_gepa = [
-        {
-            "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
-            "expectations": {"expected_codes": list(r.expected_codes)},
-        }
-        for _, r in train_pd.iterrows()
-    ]
-    validation_data_gepa = [
-        {
-            "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
-            "expectations": {"expected_codes": list(r.expected_codes)},
-        }
-        for _, r in validation_pd.iterrows()
-    ]
-    test_data_gepa = [
-        {
-            "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
-            "expectations": {"expected_codes": list(r.expected_codes)},
-        }
-        for _, r in test_pd.iterrows()
-    ]
-
-    # Custom objective: micro-F1 over the scored rows.
+    # ---- GEPA scorer: corpus micro-F1 with boundary confusion penalty ------------------
+    # This scorer runs per-row but is designed so that when GEPA averages it across the
+    # train set, the result approximates corpus micro-F1 with a penalty for boundary swaps.
     @scorer
     def gepa_micro_f1(outputs, expectations) -> Feedback:
         pred = _as_set(outputs)
@@ -968,48 +1384,103 @@ if RUN_GEPA:
         fp = len(pred - gold)
         fn = len(gold - pred)
         _, _, f1 = prf(tp, fp, fn)
-        return Feedback(value=f1, rationale=f"row micro-F1={f1:.2f}")
-
-    print(f"GEPA ready: {len(train_data_gepa)} train, {len(validation_data_gepa)} validation, {len(test_data_gepa)} test rows.")
-    print("Starting optimization — this may take a while (one SQL call per row per iteration)...")
-
-    try:
-        gepa_result = mlflow.genai.optimize_prompts(
-            predict_fn=gepa_predict_fn,
-            train_data=train_data_gepa,
-            prompt_uris=[instructions_prompt.uri],
-            optimizer=GepaPromptOptimizer(
-                max_metric_calls=50,
-                display_progress_bar=True,
-            ),
-            scorers=[gepa_micro_f1],
+        # Boundary penalty: subtract 0.1 for each boundary swap in this row
+        missed = gold - pred
+        added = pred - gold
+        n_boundary_errors = sum(
+            1 for a, b in _BOUNDARY_PAIRS
+            if (a in missed and b in added) or (b in missed and a in added)
         )
+        penalized_f1 = max(0.0, f1 - 0.1 * n_boundary_errors)
+        rationale = f"row f1={f1:.2f}"
+        if n_boundary_errors:
+            rationale += f" (boundary penalty: -{0.1*n_boundary_errors:.1f})"
+        return Feedback(value=penalized_f1, rationale=rationale)
 
-        optimized_template = gepa_result.optimized_prompts[0].template
-        print(f"\nInitial score: {gepa_result.initial_eval_score}")
-        print(f"Final score:   {gepa_result.final_eval_score}")
-        print(f"\nOptimized instructions (first 500 chars):\n{optimized_template[:500]}...")
+    print(f"GEPA ready: {len(train_data_gepa)} train, {len(validation_data_gepa)} validation, "
+          f"{len(test_data_gepa)} test rows.")
+    print(f"Phase: {GEPA_PHASE}")
+else:
+    print("GEPA is OFF (set `run_gepa` widget to 'true' to enable).")
 
-        # Register the optimized instructions
-        optimized_prompt = mlflow.genai.register_prompt(
-            name=INSTRUCTIONS_PROMPT_NAME,
-            template=optimized_template,
-            commit_message=f"GEPA-optimized ({gepa_result.initial_eval_score:.3f} → {gepa_result.final_eval_score:.3f})",
-        )
-        print(f"\n✓ Registered optimized instructions as v{optimized_prompt.version}")
+# COMMAND ----------
 
-        # --- Evaluate GEPA result on the UNTOUCHED TEST split for honest comparison ------
-        # The validation split was "used up" by GEPA's selection process. Only the test
-        # split gives a truly independent assessment.
-        optimized_config = {"labels": LABELS, "instructions": optimized_template, "options": AI_OPTIONS}
-        optimized_hash = hashlib.sha256(
-            json.dumps(optimized_config, sort_keys=True).encode()
-        ).hexdigest()[:16]
+# MAGIC %md
+# MAGIC ### GEPA predict function
+# MAGIC
+# MAGIC This function is called by GEPA for each row during optimization. It loads the
+# MAGIC current prompt version(s) from the registry, builds the `ai_classify` SQL, and
+# MAGIC runs it for a single row. Each call uses a **unique temp view** to avoid
+# MAGIC concurrency hazards when GEPA runs multiple candidates.
 
-        # Cache the optimized config's predictions (full dataset for completeness)
+# COMMAND ----------
+
+if RUN_GEPA:
+    def _make_gepa_predict_fn(desc_prompt_obj, instr_prompt_obj, phase):
+        """Factory for GEPA predict functions that read the correct prompt(s)
+        from the registry based on which phase is running."""
+
+        def gepa_predict_fn(opportunity_id, transcript_text):
+            # Load the current (GEPA-swapped) prompt version(s)
+            if phase in ("descriptions", "joint"):
+                desc_prompt = mlflow.genai.load_prompt(desc_prompt_obj.uri)
+                desc_text = desc_prompt.template
+                valid, err_msg = validate_descriptions_json(desc_text)
+                if valid:
+                    current_labels = json.loads(desc_text)
+                else:
+                    # If GEPA generated invalid JSON, fall back to baseline
+                    current_labels = dict(LABELS)
+            else:
+                current_labels = dict(LABELS)
+
+            if phase in ("instructions", "joint"):
+                instr_prompt = mlflow.genai.load_prompt(instr_prompt_obj.uri)
+                current_instructions = instr_prompt.template
+            else:
+                current_instructions = INSTRUCTIONS
+
+            config = {"labels": current_labels, "instructions": current_instructions, "options": AI_OPTIONS}
+            expr = build_ai_classify_expr("transcript_text", config)
+
+            # Unique temp view name per call to avoid concurrency hazards
+            view_id = uuid.uuid4().hex[:8]
+            view_name = f"_gepa_row_{view_id}"
+
+            row_df = spark.createDataFrame([(transcript_text,)], ["transcript_text"])
+            row_df.createOrReplaceTempView(view_name)
+
+            result = spark.sql(f"""
+                SELECT transform(
+                    ({expr}):response::ARRAY<STRUCT<value:STRING,confidence_score:DOUBLE,rationale:STRING>>,
+                    x -> x.value
+                ) AS pred_codes FROM {view_name}
+            """).collect()[0]
+
+            codes = [c[:2] for c in (result.pred_codes or [])]
+            return {"codes": codes}
+
+        return gepa_predict_fn
+
+    print("✓ GEPA predict function factory ready.")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### GEPA evaluation on the untouched test split
+# MAGIC
+# MAGIC After GEPA finishes, we always evaluate on the **test split** for an honest,
+# MAGIC independent assessment. This function is shared across all phases.
+
+# COMMAND ----------
+
+if RUN_GEPA:
+    def _evaluate_gepa_result(gepa_result, phase_label, optimized_config, optimized_hash):
+        """Cache predictions for the optimized config, then run evaluate() on the test split."""
+        # Cache predictions for the full dataset (for completeness)
         classify_and_cache(optimized_config, optimized_hash)
 
-        # Run evaluate() on the TEST split only
+        # Load cached predictions
         _gepa_cache = spark.sql(f"""
           SELECT opportunity_id, pred_codes, pred_confidences, pred_rationales
           FROM {CACHE_TABLE} WHERE config_hash = '{optimized_hash}'
@@ -1025,20 +1496,20 @@ if RUN_GEPA:
 
         @mlflow.trace
         def gepa_test_predict_fn(opportunity_id, transcript_text):
-            """Cache lookup for GEPA-optimized predictions."""
             pairs = _GEPA_PREDS.get(opportunity_id, [])
             codes = [c[:2] for (c, conf) in pairs if (conf is None or conf >= CONFIDENCE_THRESHOLD)]
             confidences = [conf for (c, conf) in pairs if (conf is None or conf >= CONFIDENCE_THRESHOLD)]
             rationales = _GEPA_RATS.get(opportunity_id, [])
             return {"codes": codes, "confidences": confidences, "rationales": rationales}
 
-        with mlflow.start_run(run_name=f"{RUN_LABEL}_gepa_test_split") as gepa_test_run:
+        with mlflow.start_run(run_name=f"{RUN_LABEL}_gepa_{phase_label}_test") as gepa_test_run:
             mlflow.log_params({
                 "config_hash": optimized_hash,
                 "confidence_threshold": CONFIDENCE_THRESHOLD,
                 "n_eval_rows": len(test_data_gepa),
                 "split": "test (untouched by GEPA)",
-                "source": "GEPA-optimized",
+                "source": f"GEPA-{phase_label}",
+                "gepa_phase": phase_label,
                 "gepa_initial_score": gepa_result.initial_eval_score,
                 "gepa_final_score": gepa_result.final_eval_score,
             })
@@ -1051,7 +1522,7 @@ if RUN_GEPA:
             )
 
         print(f"\n{'='*60}")
-        print(f"  GEPA HONEST TEST-SPLIT EVALUATION")
+        print(f"  GEPA {phase_label.upper()} — HONEST TEST-SPLIT EVALUATION")
         print(f"  (this split was NEVER seen during optimization)")
         print(f"{'='*60}")
         print(f"  GEPA train score      : {gepa_result.initial_eval_score:.3f} → {gepa_result.final_eval_score:.3f}")
@@ -1061,12 +1532,285 @@ if RUN_GEPA:
         print(f"\n  ⚠ Compare the test-split numbers against the baseline's FULL-dataset")
         print(f"    numbers with caution — different denominators. The key question is:")
         print(f"    did GEPA find a GENERALIZABLE improvement, or did it overfit?")
-        print(f"\n✓ GEPA-optimized config cached (hash={optimized_hash}).")
-        print(f"  Compare runs in the Experiments UI or Section 11.")
+        print(f"\n✓ GEPA-{phase_label} optimized config cached (hash={optimized_hash}).")
+        return gepa_test_result
 
+    print("✓ GEPA evaluation helper ready.")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Section 12b — Phase: descriptions
+# MAGIC
+# MAGIC Optimize the 6 label descriptions while holding instructions fixed. Best when
+# MAGIC substitution errors (bucket C) dominate — the descriptions control the *boundaries*
+# MAGIC between codes.
+# MAGIC
+# MAGIC The structural validator ensures GEPA only considers candidates that are valid JSON
+# MAGIC with exactly 6 keys and ≤1,000 chars per value.
+
+# COMMAND ----------
+
+if RUN_GEPA and GEPA_PHASE in ("descriptions", "joint"):
+    print(f"=== GEPA PHASE: descriptions ===")
+
+    # Register (or reuse) the descriptions prompt for GEPA to evolve
+    try:
+        _desc_for_gepa = _register_if_changed(
+            name=DESCRIPTIONS_PROMPT_NAME,
+            template=json.dumps(LABELS, ensure_ascii=False, indent=2),
+            commit_message=f"Baseline descriptions for GEPA ({RUN_LABEL})",
+        )
     except Exception as e:
-        print(f"⚠ GEPA failed: {type(e).__name__}: {e}")
-        print("This may require mlflow>=3.5.0 and a supported workspace.")
+        print(f"⚠ Cannot register descriptions prompt: {e}")
+        _desc_for_gepa = None
+
+    if _desc_for_gepa:
+        _instr_for_desc_gepa = INSTR_PROMPT_VERSION  # instructions stay fixed
+        if _instr_for_desc_gepa is None:
+            # If instructions prompt isn't registered, register it now
+            try:
+                _instr_for_desc_gepa = _register_if_changed(
+                    name=INSTRUCTIONS_PROMPT_NAME,
+                    template=INSTRUCTIONS,
+                    commit_message=f"Baseline instructions (held fixed for desc GEPA)",
+                )
+            except Exception:
+                pass
+
+        if _instr_for_desc_gepa:
+            predict_fn_desc = _make_gepa_predict_fn(_desc_for_gepa, _instr_for_desc_gepa, "descriptions")
+
+            print(f"Starting GEPA descriptions optimization — this may take a while...")
+            print(f"  Train rows: {len(train_data_gepa)}")
+            print(f"  Prompt URI: {_desc_for_gepa.uri if hasattr(_desc_for_gepa, 'uri') else 'N/A'}")
+
+            try:
+                gepa_desc_result = mlflow.genai.optimize_prompts(
+                    predict_fn=predict_fn_desc,
+                    train_data=train_data_gepa,
+                    prompt_uris=[_desc_for_gepa.uri],
+                    optimizer=GepaPromptOptimizer(
+                        reflection_model="databricks:/databricks-claude-opus-5-5",
+                        max_metric_calls=50,
+                        display_progress_bar=True,
+                    ),
+                    scorers=[gepa_micro_f1],
+                )
+
+                optimized_desc_text = gepa_desc_result.optimized_prompts[0].template
+                valid, err_msg = validate_descriptions_json(optimized_desc_text)
+                if valid:
+                    optimized_labels = json.loads(optimized_desc_text)
+                    print(f"\n✓ GEPA descriptions optimization complete.")
+                    print(f"  Initial score: {gepa_desc_result.initial_eval_score:.3f}")
+                    print(f"  Final score:   {gepa_desc_result.final_eval_score:.3f}")
+
+                    # Register the optimized descriptions
+                    mlflow.genai.register_prompt(
+                        name=DESCRIPTIONS_PROMPT_NAME,
+                        template=optimized_desc_text,
+                        commit_message=f"GEPA-desc ({gepa_desc_result.initial_eval_score:.3f} → {gepa_desc_result.final_eval_score:.3f})",
+                    )
+
+                    # Evaluate on test split
+                    opt_desc_config = {"labels": optimized_labels, "instructions": INSTRUCTIONS, "options": AI_OPTIONS}
+                    opt_desc_hash = hashlib.sha256(
+                        json.dumps(opt_desc_config, sort_keys=True).encode()
+                    ).hexdigest()[:16]
+                    _evaluate_gepa_result(gepa_desc_result, "descriptions", opt_desc_config, opt_desc_hash)
+                else:
+                    print(f"⚠ GEPA produced invalid descriptions: {err_msg}")
+                    print(f"  Raw output (first 500 chars): {optimized_desc_text[:500]}")
+
+            except Exception as e:
+                print(f"⚠ GEPA descriptions failed: {type(e).__name__}: {e}")
+        else:
+            print("⚠ Skipping descriptions GEPA — cannot register instructions prompt.")
+    else:
+        print("⚠ Skipping descriptions GEPA — cannot register descriptions prompt.")
+elif RUN_GEPA:
+    print(f"Skipping descriptions phase (current phase: {GEPA_PHASE}).")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Section 12c — Phase: instructions
+# MAGIC
+# MAGIC Optimize the global instructions while holding descriptions fixed. Best when
+# MAGIC over-assignment (bucket A) or under-assignment (bucket B/E) errors dominate —
+# MAGIC the instructions control *when to assign anything at all*.
+
+# COMMAND ----------
+
+if RUN_GEPA and GEPA_PHASE in ("instructions", "joint"):
+    print(f"=== GEPA PHASE: instructions ===")
+
+    # Register (or reuse) the instructions prompt for GEPA to evolve
+    try:
+        _instr_for_gepa = _register_if_changed(
+            name=INSTRUCTIONS_PROMPT_NAME,
+            template=INSTRUCTIONS,
+            commit_message=f"Baseline instructions for GEPA ({RUN_LABEL})",
+        )
+    except Exception as e:
+        print(f"⚠ Cannot register instructions prompt: {e}")
+        _instr_for_gepa = None
+
+    if _instr_for_gepa:
+        _desc_for_instr_gepa = DESC_PROMPT_VERSION  # descriptions stay fixed
+        if _desc_for_instr_gepa is None:
+            try:
+                _desc_for_instr_gepa = _register_if_changed(
+                    name=DESCRIPTIONS_PROMPT_NAME,
+                    template=json.dumps(LABELS, ensure_ascii=False, indent=2),
+                    commit_message=f"Baseline descriptions (held fixed for instr GEPA)",
+                )
+            except Exception:
+                pass
+
+        if _desc_for_instr_gepa:
+            predict_fn_instr = _make_gepa_predict_fn(_desc_for_instr_gepa, _instr_for_gepa, "instructions")
+
+            print(f"Starting GEPA instructions optimization — this may take a while...")
+            print(f"  Train rows: {len(train_data_gepa)}")
+            print(f"  Prompt URI: {_instr_for_gepa.uri if hasattr(_instr_for_gepa, 'uri') else 'N/A'}")
+
+            try:
+                gepa_instr_result = mlflow.genai.optimize_prompts(
+                    predict_fn=predict_fn_instr,
+                    train_data=train_data_gepa,
+                    prompt_uris=[_instr_for_gepa.uri],
+                    optimizer=GepaPromptOptimizer(
+                        reflection_model="databricks:/databricks-claude-opus-5-5",
+                        max_metric_calls=50,
+                        display_progress_bar=True,
+                    ),
+                    scorers=[gepa_micro_f1],
+                )
+
+                optimized_instr_text = gepa_instr_result.optimized_prompts[0].template
+                print(f"\n✓ GEPA instructions optimization complete.")
+                print(f"  Initial score: {gepa_instr_result.initial_eval_score:.3f}")
+                print(f"  Final score:   {gepa_instr_result.final_eval_score:.3f}")
+                print(f"  Optimized instructions (first 500 chars):\n{optimized_instr_text[:500]}...")
+
+                # Register the optimized instructions
+                mlflow.genai.register_prompt(
+                    name=INSTRUCTIONS_PROMPT_NAME,
+                    template=optimized_instr_text,
+                    commit_message=f"GEPA-instr ({gepa_instr_result.initial_eval_score:.3f} → {gepa_instr_result.final_eval_score:.3f})",
+                )
+
+                # Evaluate on test split
+                opt_instr_config = {"labels": LABELS, "instructions": optimized_instr_text, "options": AI_OPTIONS}
+                opt_instr_hash = hashlib.sha256(
+                    json.dumps(opt_instr_config, sort_keys=True).encode()
+                ).hexdigest()[:16]
+                _evaluate_gepa_result(gepa_instr_result, "instructions", opt_instr_config, opt_instr_hash)
+
+            except Exception as e:
+                print(f"⚠ GEPA instructions failed: {type(e).__name__}: {e}")
+        else:
+            print("⚠ Skipping instructions GEPA — cannot register descriptions prompt.")
+    else:
+        print("⚠ Skipping instructions GEPA — cannot register instructions prompt.")
+elif RUN_GEPA:
+    print(f"Skipping instructions phase (current phase: {GEPA_PHASE}).")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Section 12d — Phase: joint
+# MAGIC
+# MAGIC Optimize **both** descriptions and instructions simultaneously. This is the most
+# MAGIC expensive mode and should only be used after single-surface phases have plateaued.
+# MAGIC GEPA evolves both prompt URIs together, looking for synergies.
+# MAGIC
+# MAGIC > **Warning:** joint optimization searches a much larger space. It will take
+# MAGIC > significantly more iterations and LLM calls than single-surface phases.
+
+# COMMAND ----------
+
+if RUN_GEPA and GEPA_PHASE == "joint":
+    print(f"=== GEPA PHASE: joint (descriptions + instructions) ===")
+
+    # Ensure both prompts are registered
+    try:
+        _desc_for_joint = _register_if_changed(
+            name=DESCRIPTIONS_PROMPT_NAME,
+            template=json.dumps(LABELS, ensure_ascii=False, indent=2),
+            commit_message=f"Baseline descriptions for joint GEPA ({RUN_LABEL})",
+        )
+        _instr_for_joint = _register_if_changed(
+            name=INSTRUCTIONS_PROMPT_NAME,
+            template=INSTRUCTIONS,
+            commit_message=f"Baseline instructions for joint GEPA ({RUN_LABEL})",
+        )
+    except Exception as e:
+        print(f"⚠ Cannot register prompts: {e}")
+        _desc_for_joint = None
+        _instr_for_joint = None
+
+    if _desc_for_joint and _instr_for_joint:
+        predict_fn_joint = _make_gepa_predict_fn(_desc_for_joint, _instr_for_joint, "joint")
+
+        print(f"Starting GEPA joint optimization — this will be expensive...")
+        print(f"  Train rows: {len(train_data_gepa)}")
+        print(f"  Optimizing 2 prompts simultaneously")
+
+        try:
+            gepa_joint_result = mlflow.genai.optimize_prompts(
+                predict_fn=predict_fn_joint,
+                train_data=train_data_gepa,
+                prompt_uris=[_desc_for_joint.uri, _instr_for_joint.uri],
+                optimizer=GepaPromptOptimizer(
+                    reflection_model="databricks:/databricks-claude-opus-5-5",
+                    max_metric_calls=80,  # more budget for joint search
+                    display_progress_bar=True,
+                ),
+                scorers=[gepa_micro_f1],
+            )
+
+            # Unpack both optimized prompts
+            opt_desc_text_joint = gepa_joint_result.optimized_prompts[0].template
+            opt_instr_text_joint = gepa_joint_result.optimized_prompts[1].template
+
+            # Validate descriptions
+            valid, err_msg = validate_descriptions_json(opt_desc_text_joint)
+            if valid:
+                opt_labels_joint = json.loads(opt_desc_text_joint)
+            else:
+                print(f"⚠ Joint GEPA produced invalid descriptions: {err_msg}")
+                opt_labels_joint = dict(LABELS)  # fall back
+
+            print(f"\n✓ GEPA joint optimization complete.")
+            print(f"  Initial score: {gepa_joint_result.initial_eval_score:.3f}")
+            print(f"  Final score:   {gepa_joint_result.final_eval_score:.3f}")
+
+            # Register optimized versions
+            mlflow.genai.register_prompt(
+                name=DESCRIPTIONS_PROMPT_NAME,
+                template=opt_desc_text_joint,
+                commit_message=f"GEPA-joint desc ({gepa_joint_result.initial_eval_score:.3f} → {gepa_joint_result.final_eval_score:.3f})",
+            )
+            mlflow.genai.register_prompt(
+                name=INSTRUCTIONS_PROMPT_NAME,
+                template=opt_instr_text_joint,
+                commit_message=f"GEPA-joint instr ({gepa_joint_result.initial_eval_score:.3f} → {gepa_joint_result.final_eval_score:.3f})",
+            )
+
+            # Evaluate on test split
+            opt_joint_config = {"labels": opt_labels_joint, "instructions": opt_instr_text_joint, "options": AI_OPTIONS}
+            opt_joint_hash = hashlib.sha256(
+                json.dumps(opt_joint_config, sort_keys=True).encode()
+            ).hexdigest()[:16]
+            _evaluate_gepa_result(gepa_joint_result, "joint", opt_joint_config, opt_joint_hash)
+
+        except Exception as e:
+            print(f"⚠ GEPA joint optimization failed: {type(e).__name__}: {e}")
+    else:
+        print("⚠ Skipping joint GEPA — cannot register one or both prompts.")
 
 # COMMAND ----------
 
@@ -1074,12 +1818,13 @@ if RUN_GEPA:
 # MAGIC ## Section 13 — Promote the winning prompt
 # MAGIC
 # MAGIC Once a variant is a defensible improvement, **promote it** by setting the
-# MAGIC `"production"` alias on its Prompt Registry version. The idea is that the production
-# MAGIC pipeline will eventually read from this alias:
+# MAGIC `"production"` alias on its Prompt Registry version. We promote all three
+# MAGIC registered prompts (descriptions, instructions, and the full bundle) so the
+# MAGIC production pipeline can read from whichever level of granularity it needs:
 # MAGIC
 # MAGIC ```python
 # MAGIC # In the production pipeline (future state):
-# MAGIC prompt = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@production")
+# MAGIC prompt = mlflow.genai.load_prompt(f"prompts:/{BUNDLE_PROMPT_NAME}@production")
 # MAGIC config = json.loads(prompt.template)
 # MAGIC # ... build ai_classify SQL from config ...
 # MAGIC ```
@@ -1090,22 +1835,50 @@ if RUN_GEPA:
 
 # COMMAND ----------
 
-# Conditional promotion: only promote if we have a prompt version.
-if PROMPT_VERSION:
+# Promote the bundle prompt
+if BUNDLE_PROMPT_VERSION:
     try:
         mlflow.genai.set_prompt_alias(
-            name=PROMPT_NAME,
+            name=BUNDLE_PROMPT_NAME,
             alias="production",
-            version=PROMPT_VERSION.version,
+            version=BUNDLE_PROMPT_VERSION.version,
         )
-        print(f"✓ Promoted '{PROMPT_NAME}' v{PROMPT_VERSION.version} to @production alias.")
-        print(f"  Load it anywhere with: mlflow.genai.load_prompt('prompts:/{PROMPT_NAME}@production')")
+        print(f"✓ Promoted bundle '{BUNDLE_PROMPT_NAME}' v{BUNDLE_PROMPT_VERSION.version} to @production.")
     except Exception as e:
-        print(f"(Could not set alias: {type(e).__name__}: {e})")
-        print("The prompt version is still registered — promotion can be done manually in the UI.")
-else:
-    print("No Prompt Registry version to promote. The full config is logged as "
+        print(f"(Could not set bundle alias: {type(e).__name__}: {e})")
+
+# Promote the descriptions prompt
+if DESC_PROMPT_VERSION:
+    try:
+        mlflow.genai.set_prompt_alias(
+            name=DESCRIPTIONS_PROMPT_NAME,
+            alias="production",
+            version=DESC_PROMPT_VERSION.version,
+        )
+        print(f"✓ Promoted descriptions '{DESCRIPTIONS_PROMPT_NAME}' v{DESC_PROMPT_VERSION.version} to @production.")
+    except Exception as e:
+        print(f"(Could not set descriptions alias: {type(e).__name__}: {e})")
+
+# Promote the instructions prompt
+if INSTR_PROMPT_VERSION:
+    try:
+        mlflow.genai.set_prompt_alias(
+            name=INSTRUCTIONS_PROMPT_NAME,
+            alias="production",
+            version=INSTR_PROMPT_VERSION.version,
+        )
+        print(f"✓ Promoted instructions '{INSTRUCTIONS_PROMPT_NAME}' v{INSTR_PROMPT_VERSION.version} to @production.")
+    except Exception as e:
+        print(f"(Could not set instructions alias: {type(e).__name__}: {e})")
+
+if not any([BUNDLE_PROMPT_VERSION, DESC_PROMPT_VERSION, INSTR_PROMPT_VERSION]):
+    print("No Prompt Registry versions to promote. The full config is logged as "
           "prompt_config.json on the MLflow run — copy LABELS + INSTRUCTIONS to the pipeline SQL.")
+
+print(f"\nLoad production prompts anywhere with:")
+print(f"  mlflow.genai.load_prompt('prompts:/{BUNDLE_PROMPT_NAME}@production')")
+print(f"  mlflow.genai.load_prompt('prompts:/{DESCRIPTIONS_PROMPT_NAME}@production')")
+print(f"  mlflow.genai.load_prompt('prompts:/{INSTRUCTIONS_PROMPT_NAME}@production')")
 
 # COMMAND ----------
 
@@ -1137,22 +1910,39 @@ else:
 # MAGIC **Audit label quality** — double-label a subset for inter-annotator agreement. At
 # MAGIC small n, a mislabeled truth row is as damaging as a model error.
 # MAGIC
-# MAGIC ### 2. Integrate the Prompt Registry with the pipeline
+# MAGIC ### 2. GEPA phase sequencing
+# MAGIC
+# MAGIC Run GEPA phases in this order for best results:
+# MAGIC
+# MAGIC 1. **`instructions` first** — fixes over/under-assignment (the biggest lever).
+# MAGIC    After it converges, promote the winning instructions and set them as the new
+# MAGIC    baseline in Section 1.
+# MAGIC 2. **`descriptions` second** — fixes boundary/substitution errors between adjacent
+# MAGIC    codes. With better instructions as the baseline, description optimization is
+# MAGIC    more focused.
+# MAGIC 3. **`joint` last** — only if single-surface phases have plateaued. The joint
+# MAGIC    search space is much larger, so it needs more iterations and more data.
+# MAGIC
+# MAGIC Between phases, **update the baseline**: copy the GEPA-optimized text back into
+# MAGIC the Section 1 cells, set a new `run_label`, and re-evaluate on the full dataset
+# MAGIC to confirm the improvement before proceeding.
+# MAGIC
+# MAGIC ### 3. Integrate the Prompt Registry with the pipeline
 # MAGIC Today, the pipeline hardcodes labels + instructions in SQL. The future state:
 # MAGIC ```python
 # MAGIC # In the pipeline's Python wrapper:
-# MAGIC prompt = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@production")
+# MAGIC prompt = mlflow.genai.load_prompt(f"prompts:/{BUNDLE_PROMPT_NAME}@production")
 # MAGIC config = json.loads(prompt.template)
 # MAGIC # Build the ai_classify SQL from `config` and inject it into the MV definition.
 # MAGIC ```
 # MAGIC This closes the loop: **tune here → promote → pipeline picks it up automatically**.
 # MAGIC
-# MAGIC ### 3. Measure model stochasticity
+# MAGIC ### 4. Measure model stochasticity
 # MAGIC `ai_classify` is non-deterministic. To show the *second* noise floor, re-run one
 # MAGIC config 3–5× with the cache cleared for that hash (delete from `ai_classify_eval_cache
 # MAGIC WHERE config_hash = '...'`), and watch micro-F1 wobble with the prompt held fixed.
 # MAGIC
-# MAGIC ### 4. Production monitoring
+# MAGIC ### 5. Production monitoring
 # MAGIC Once the pipeline is reading from the registry, register an MLflow scorer against
 # MAGIC the experiment and start production monitoring:
 # MAGIC ```python
@@ -1161,7 +1951,7 @@ else:
 # MAGIC quality_scorer.start(sampling_config=ScorerSamplingConfig(sample_rate=0.1))
 # MAGIC ```
 # MAGIC
-# MAGIC ### 5. The qualifier layer
+# MAGIC ### 6. The qualifier layer
 # MAGIC `gold_findings_raw` runs a finer-grained qualifier classification per code
 # MAGIC (e.g. 4A → `current-supplier` / `competitor-rate` / …). The **same eval harness**
 # MAGIC generalizes: swap the labels dict, build a parallel eval table, and re-use this
