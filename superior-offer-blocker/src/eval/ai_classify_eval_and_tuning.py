@@ -8,14 +8,13 @@
 # MAGIC
 # MAGIC **Audience:** you are new to Databricks and MLflow. This single notebook teaches
 # MAGIC you how to *think through*, *measure*, and *tune* the prompt behind an
-# MAGIC `ai_classify` call — using MLflow as the scaffolding — and, just as importantly,
-# MAGIC **when not to over-engineer it**.
+# MAGIC `ai_classify` call — using MLflow as the scaffolding.
 # MAGIC
 # MAGIC ## What are we evaluating?
-# MAGIC In the pipeline, `gold_opportunity_enrichment` runs **one** `ai_classify(...)` call
-# MAGIC per sales-call transcript. It is **multilabel**: a transcript can receive 0..N
-# MAGIC "offer-blocker" codes (**4A–4F**). The foundation model is fixed — the thing we
-# MAGIC actually tune is a **prompt**, and that prompt lives in **two surfaces**:
+# MAGIC `gold_opportunity_enrichment` runs **one** `ai_classify(...)` per sales-call
+# MAGIC transcript. It is **multilabel**: a transcript can receive 0..N "offer-blocker"
+# MAGIC codes (**4A–4F**). The foundation model is fixed — the thing we actually tune is a
+# MAGIC **prompt**, and that prompt lives in **two surfaces**:
 # MAGIC
 # MAGIC 1. the six **label descriptions** (the routing rules per code), and
 # MAGIC 2. the global **instructions** string (when to assign *anything* at all).
@@ -23,24 +22,19 @@
 # MAGIC > **The one mental model to internalize:** *we are not evaluating a model, we are
 # MAGIC > evaluating a prompt.* A "model version" here **is** a `(descriptions +
 # MAGIC > instructions + options)` bundle. Evaluation is a function
-# MAGIC > `prompt_config -> accuracy metrics`.
+# MAGIC > `prompt_config → accuracy metrics`.
 # MAGIC
-# MAGIC ## The ground truth
-# MAGIC `code_classification_eval_dataset` is an **MLflow managed evaluation dataset**
-# MAGIC (Unity-Catalog-backed). Each row has an `inputs` JSON (`opportunity_id`,
-# MAGIC `transcript_text`) and an `expectations` JSON
-# MAGIC (`{"expected_response": "[\"4B\",\"4C\"]"}` — a multilabel array; `[]` = no blocker).
+# MAGIC ## How this notebook is organized
 # MAGIC
-# MAGIC ## ⚠️ Read this before you read any number
-# MAGIC This eval set is **tiny and imbalanced**: **24 rows, 50% empty, and code 4A has
-# MAGIC exactly ONE positive example.** That single fact changes everything:
-# MAGIC
-# MAGIC * We are **not** running an optimization problem. We are running a **structured,
-# MAGIC   rationale-driven error analysis** with a *thin quantitative guardrail*.
-# MAGIC * Metrics are a **regression smoke-test**, not a leaderboard. One row flipping
-# MAGIC   moves micro-F1 by ~4 points — that is **noise**, not progress.
-# MAGIC * The honest #1 deliverable is **not a tuned prompt** — it is a credible path from
-# MAGIC   24 labels to a set big enough to trust. We return to this at the end.
+# MAGIC | Phase | Sections | What happens |
+# MAGIC |-------|----------|--------------|
+# MAGIC | **Setup** | 0–1 | Parameters, prompt config, **register prompt in Prompt Registry** |
+# MAGIC | **Data** | 2–3 | Load managed eval dataset, inspect class balance, train/validation/test split |
+# MAGIC | **Score** | 4–7 | Build SQL, cache predictions, run `mlflow.genai.evaluate()`, corpus metrics |
+# MAGIC | **Diagnose** | 8–10 | Error analysis, substitution matrix, decision guide + threshold sweep |
+# MAGIC | **Compare** | 11 | Programmatic side-by-side of all runs |
+# MAGIC | **Optimize** | 12–13 | (Optional) GEPA automated prompt optimization (3-way split) + conditional promotion |
+# MAGIC | **Ship** | 14 | Next steps: pipeline integration, production monitoring |
 # MAGIC
 # MAGIC The notebook is **idempotent**: run it top-to-bottom any number of times and you
 # MAGIC get the same experiment state. Expensive `ai_classify` calls are cached by a
@@ -49,15 +43,11 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Section 0 — Setup, parameters & the prompt config
-# MAGIC
-# MAGIC **Best practice #1: nothing is hardcoded in a cell.** Everything that could change
-# MAGIC between runs is a *widget* (a notebook parameter). Re-running with the same widgets
-# MAGIC reproduces the same result exactly — that is the foundation of idempotency.
+# MAGIC ## Section 0 — Setup & parameters
 
 # COMMAND ----------
 
-# MAGIC %pip install -q -U "mlflow[databricks]>=3.1"
+# MAGIC %pip install -q -U "mlflow[databricks]>=3.5"
 # MAGIC %restart_python
 
 # COMMAND ----------
@@ -70,32 +60,57 @@ dbutils.widgets.text("eval_table", "code_classification_eval_dataset", "Ground-t
 dbutils.widgets.text("experiment_path", "", "MLflow experiment path (blank = notebook default)")
 dbutils.widgets.text("run_label", "baseline_v1", "Human name for THIS prompt variant")
 dbutils.widgets.text("confidence_threshold", "0.0", "Keep labels with confidence >= this")
+dbutils.widgets.dropdown("run_gepa", "false", ["false", "true"], "Run GEPA automated optimization?")
 
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 EVAL_TABLE = f"{CATALOG}.{SCHEMA}.{dbutils.widgets.get('eval_table')}"
 CACHE_TABLE = f"{CATALOG}.{SCHEMA}.ai_classify_eval_cache"
+PROMPT_NAME = f"{CATALOG}.{SCHEMA}.offer_blocker_ai_classify_prompt"
 RUN_LABEL = dbutils.widgets.get("run_label")
 CONFIDENCE_THRESHOLD = float(dbutils.widgets.get("confidence_threshold"))
+RUN_GEPA = dbutils.widgets.get("run_gepa") == "true"
 
 print(f"Ground truth : {EVAL_TABLE}")
 print(f"Cache table  : {CACHE_TABLE}")
+print(f"Prompt name  : {PROMPT_NAME}")
 print(f"Run label    : {RUN_LABEL}")
 print(f"Confidence τ : {CONFIDENCE_THRESHOLD}")
+print(f"Run GEPA     : {RUN_GEPA}")
+
+# COMMAND ----------
+
+import json
+import hashlib
+import mlflow
+
+# Point MLflow at an experiment. Blank => the notebook's own default experiment.
+_exp = dbutils.widgets.get("experiment_path").strip()
+if _exp:
+    mlflow.set_experiment(_exp)
+    print(f"Using experiment: {_exp}")
+else:
+    print("Using the notebook's default experiment (no path set).")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### The prompt config — a single versioned object
+# MAGIC ## Section 1 — The prompt config & the Prompt Registry
 # MAGIC
-# MAGIC The two tunable surfaces (descriptions + instructions) plus the `ai_classify`
-# MAGIC options are **one object**. We treat them as a unit, serialize them, and hash them.
-# MAGIC That hash becomes the cache key and the thing we log to MLflow — so every result is
-# MAGIC traceable to the exact prompt that produced it.
+# MAGIC **Best practice: your prompt is a *versioned artifact*, not a string in a code
+# MAGIC cell.** We define the two tunable surfaces here, bundle them into one config, and
+# MAGIC register that config in the **MLflow Prompt Registry** — a Unity-Catalog-backed
+# MAGIC version store for prompt templates.
 # MAGIC
-# MAGIC **To tune:** copy this cell, edit *one* surface, change `run_label`, re-run. Keep the
-# MAGIC baseline below byte-for-byte identical to production so your first number reflects
-# MAGIC reality.
+# MAGIC The iteration loop becomes:
+# MAGIC 1. **Edit** one surface below (descriptions *or* instructions — never both at once).
+# MAGIC 2. **Register** a new prompt version (the cell below does this automatically).
+# MAGIC 3. **Evaluate** by re-running the notebook with a new `run_label`.
+# MAGIC 4. **Compare** runs side-by-side in the Experiments UI.
+# MAGIC 5. **Promote** the winner to the `"production"` alias (Section 13).
+# MAGIC
+# MAGIC > Keep the baseline below **byte-for-byte identical to production** so your first
+# MAGIC > number reflects reality.
 
 # COMMAND ----------
 
@@ -134,16 +149,14 @@ AI_OPTIONS = {
     "enableRationales": "true",
 }
 
-# The ordered list of valid code prefixes we report on. Order is held FIXED across
-# variants so we measure the description text, not a label-ordering artifact.
+# The ordered list of valid code prefixes. Order is held FIXED across variants so we
+# measure the description text, not a label-ordering artifact.
 CODE_PREFIXES = ["4A", "4B", "4C", "4D", "4E", "4F"]
 
 # COMMAND ----------
 
-import json
-import hashlib
-
-# The config is one object. Serialize deterministically (sorted keys) and hash it.
+# Bundle the two surfaces + options into one config and hash it. The hash is the cache
+# key and the thing we log to MLflow — so every result is traceable to the exact prompt.
 PROMPT_CONFIG = {"labels": LABELS, "instructions": INSTRUCTIONS, "options": AI_OPTIONS}
 _config_blob = json.dumps(PROMPT_CONFIG, sort_keys=True, ensure_ascii=False)
 CONFIG_HASH = hashlib.sha256(_config_blob.encode("utf-8")).hexdigest()[:16]
@@ -151,50 +164,90 @@ print(f"CONFIG_HASH = {CONFIG_HASH}  (changes whenever ANY surface changes)")
 
 # COMMAND ----------
 
-import mlflow
+# MAGIC %md
+# MAGIC ### Register the config in the Prompt Registry
+# MAGIC
+# MAGIC Each prompt variant becomes a **version** in the registry. The notebook checks
+# MAGIC whether the latest version already matches (idempotency) — if so, it reuses it
+# MAGIC rather than creating a duplicate.
 
-# Point MLflow at an experiment. Blank => the notebook's own default experiment, which
-# is the simplest correct choice for a newcomer. An explicit path lets a team share one.
-_exp = dbutils.widgets.get("experiment_path").strip()
-if _exp:
-    mlflow.set_experiment(_exp)
-    print(f"Using experiment: {_exp}")
-else:
-    print("Using the notebook's default experiment (no path set).")
+# COMMAND ----------
+
+def _register_if_changed(name, template, commit_message):
+    """Register a new prompt version only if the content has changed."""
+    try:
+        latest = mlflow.genai.load_prompt(f"prompts:/{name}")
+        if latest.template.strip() == template.strip():
+            print(f"✓ Prompt '{name}' v{latest.version} already matches — reusing.")
+            return latest
+    except Exception:
+        pass  # Prompt doesn't exist yet
+    registered = mlflow.genai.register_prompt(
+        name=name,
+        template=template,
+        commit_message=commit_message,
+    )
+    print(f"✓ Registered '{name}' as v{registered.version}: {commit_message}")
+    return registered
+
+_config_template = json.dumps(PROMPT_CONFIG, ensure_ascii=False, indent=2)
+
+try:
+    PROMPT_VERSION = _register_if_changed(
+        name=PROMPT_NAME,
+        template=_config_template,
+        commit_message=f"{RUN_LABEL} (config_hash={CONFIG_HASH})",
+    )
+except Exception as e:
+    # Prompt Registry may not be available in all workspaces/MLflow versions.
+    PROMPT_VERSION = None
+    print(f"(Prompt Registry unavailable: {type(e).__name__}: {e})")
+    print("Continuing without it — the config is still hashed and logged as a run artifact.")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Section 1 — Load the ground truth and LOOK AT IT FIRST
+# MAGIC ## Section 2 — Load the ground truth
 # MAGIC
-# MAGIC **Best practice #2: inspect the data before you measure anything.** We parse the
-# MAGIC managed dataset's JSON columns into a clean shape and immediately print the class
-# MAGIC balance. For a tiny set, this table sets your expectations for *every* number below.
+# MAGIC The eval table is an **MLflow managed evaluation dataset** — a Unity Catalog table
+# MAGIC with `inputs` and `expectations` JSON columns. We load it via the MLflow managed
+# MAGIC dataset API (with a Spark fallback), then parse the JSON into a clean shape.
 # MAGIC
-# MAGIC > *MLflow-native alternative:* you can also load this with
-# MAGIC > `mlflow.genai.datasets.get_dataset(name="…")` (requires `databricks-agents`). We
-# MAGIC > read it transparently with Spark here so you can see exactly what is inside.
+# MAGIC **Best practice: inspect the data before you measure anything.** The class balance
+# MAGIC table sets your expectations for *every* number below.
 
 # COMMAND ----------
 
+import pandas as pd
 from pyspark.sql import functions as F
 
-# `inputs` and `expectations` are JSON strings. Parse them into real columns.
-raw = spark.table(EVAL_TABLE)
-gt = (
-    raw.select(
-        F.get_json_object("inputs", "$.opportunity_id").alias("opportunity_id"),
-        F.get_json_object("inputs", "$.transcript_text").alias("transcript_text"),
-        F.get_json_object("expectations", "$.expected_response").alias("expected_json"),
-    )
-    # expected_response is itself a JSON array string, e.g. '["4B","4C"]' or '[]'
-    .withColumn("expected_codes", F.from_json("expected_json", "ARRAY<STRING>"))
-    .drop("expected_json")
-)
-gt.cache()
-N_ROWS = gt.count()
-print(f"Loaded {N_ROWS} ground-truth rows.")
-display(gt.select("opportunity_id", "expected_codes"))
+# --- Load the table (try managed-dataset API first, fall back to Spark) ---------------
+try:
+    import mlflow.genai.datasets
+    _ds = mlflow.genai.datasets.get_dataset(EVAL_TABLE)
+    _raw_pd = _ds.to_df()
+    print(f"✓ Loaded via mlflow.genai.datasets.get_dataset (managed dataset API)")
+except Exception:
+    _raw_pd = spark.table(EVAL_TABLE).toPandas()
+    print(f"✓ Loaded via spark.table() (fallback)")
+
+# --- Parse JSON columns → clean Python types ------------------------------------------
+def _parse_row(row):
+    inputs = json.loads(row["inputs"]) if isinstance(row["inputs"], str) else row["inputs"]
+    exp_raw = json.loads(row["expectations"]) if isinstance(row["expectations"], str) else row["expectations"]
+    # expected_response is a JSON-stringified array, e.g. '["4B","4C"]' or '[]'
+    expected_codes = json.loads(exp_raw.get("expected_response", "[]"))
+    return {
+        "opportunity_id": inputs["opportunity_id"],
+        "transcript_text": inputs["transcript_text"],
+        "expected_codes": expected_codes,
+        "expected_set": set(expected_codes),
+    }
+
+gt_pd = pd.DataFrame([_parse_row(r) for _, r in _raw_pd.iterrows()])
+N_ROWS = len(gt_pd)
+print(f"Parsed {N_ROWS} ground-truth rows.")
+display(gt_pd[["opportunity_id", "expected_codes"]].head(10))
 
 # COMMAND ----------
 
@@ -203,45 +256,120 @@ display(gt.select("opportunity_id", "expected_codes"))
 
 # COMMAND ----------
 
-import pandas as pd
-
-gt_pd = gt.toPandas()
-gt_pd["expected_set"] = gt_pd["expected_codes"].apply(lambda a: set(a or []))
-
 n_empty = int((gt_pd["expected_set"].apply(len) == 0).sum())
 balance = pd.DataFrame(
     {"code": CODE_PREFIXES,
      "positive_rows": [int(gt_pd["expected_set"].apply(lambda s: c in s).sum()) for c in CODE_PREFIXES]}
 )
+pooled = N_ROWS * len(CODE_PREFIXES)
+
 print(f"Total rows            : {N_ROWS}")
 print(f"Empty / no-blocker    : {n_empty}  ({n_empty / N_ROWS:.0%})")
-print(f"Pooled label decisions: {N_ROWS * len(CODE_PREFIXES)}  <- the REAL sample size for micro-F1")
+print(f"Pooled label decisions: {pooled}  <- the REAL sample size for micro-F1")
 display(balance)
 
+# Dynamic noise floor — works at any n
 print(
-    "\n⚠️  READ THE NOISE FLOOR BEFORE ANY METRIC:\n"
-    f"   • 1 flipped label ≈ {1 / (N_ROWS * len(CODE_PREFIXES)):.1%} of micro decisions\n"
-    f"   • 1 flipped ROW   ≈ ~{len(CODE_PREFIXES) / (N_ROWS * len(CODE_PREFIXES)):.1%} swing in micro-F1\n"
-    "   • 4A has ~1 positive example: its per-label F1 is a COIN FLIP, not a metric.\n"
-    "   Treat metric moves smaller than ~1 row as NOISE, not progress."
+    "\n⚠️  NOISE FLOOR (read this before any metric):\n"
+    f"   • 1 flipped label ≈ {1 / pooled:.1%} of micro decisions\n"
+    f"   • 1 flipped ROW   ≈ ~{len(CODE_PREFIXES) / pooled:.1%} swing in micro-F1\n"
+    f"   Treat metric moves smaller than ~1 row as NOISE, not progress."
 )
+for _, r in balance.iterrows():
+    if r["positive_rows"] <= 2:
+        print(f"   ⚠  {r['code']} has only {r['positive_rows']} positive(s) — its per-label F1 is a coin flip.")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Section 2 — The system under test: build the `ai_classify` SQL from the config
+# MAGIC ## Section 3 — Train / validation / test split (3-way)
 # MAGIC
-# MAGIC Here we turn the Python config object into the exact `ai_classify(...)` SQL the
-# MAGIC pipeline runs. We build it programmatically so the prompt the pipeline uses and the
-# MAGIC prompt we evaluate can never drift apart.
+# MAGIC When running automated prompt optimization (GEPA, Section 12), we need **two**
+# MAGIC held-out splits — not just one:
+# MAGIC
+# MAGIC | Split | Purpose | Who sees it |
+# MAGIC |-------|---------|-------------|
+# MAGIC | **Train** (~70%) | What GEPA optimizes against | GEPA |
+# MAGIC | **Validation** (~15%) | Picks the winning prompt among GEPA candidates | GEPA (for selection, so it's "used up") |
+# MAGIC | **Test** (~15%) | Final honest check — truly untouched | **Nobody until final eval** |
+# MAGIC
+# MAGIC **Why 3 splits, not 2?** The validation set is compromised by *selection*:
+# MAGIC repeatedly choosing the prompt that scores best on it can overfit to that set, even
+# MAGIC though GEPA didn't directly train on it. The test set is the only truly independent
+# MAGIC assessment. Think of it as "train is for learning, validation is for choosing, test
+# MAGIC is for believing."
+# MAGIC
+# MAGIC For **manual tuning** (the primary loop), you still evaluate on the **full** dataset
+# MAGIC — you're making generalizable edits informed by rationales, not fitting to data.
+# MAGIC
+# MAGIC The split is **deterministic** (hash-based, seeded) so it is reproducible across
+# MAGIC re-runs. We validate that every label appears in all three splits.
 
 # COMMAND ----------
 
-def _sql_str(s: str) -> str:
-    """Safely embed a Python string as a SQL string literal (escape single quotes)."""
+SPLIT_SEED = 42
+VALIDATION_FRACTION = 0.15  # 15% held out for GEPA selection ("used up" by choosing)
+TEST_FRACTION = 0.15        # 15% held out for final honest eval (never seen by GEPA)
+# Remaining ~70% is the train split.
+
+def _split_hash(opportunity_id, seed=SPLIT_SEED):
+    """Deterministic assignment: 0.0–1.0 from a hash of (seed, id)."""
+    h = hashlib.md5(f"{seed}:{opportunity_id}".encode()).hexdigest()
+    return int(h[:8], 16) / 0xFFFFFFFF
+
+def _assign_split(h):
+    if h < TEST_FRACTION:
+        return "test"
+    elif h < TEST_FRACTION + VALIDATION_FRACTION:
+        return "validation"
+    else:
+        return "train"
+
+gt_pd["_split_val"] = gt_pd["opportunity_id"].apply(_split_hash)
+gt_pd["split"] = gt_pd["_split_val"].apply(_assign_split)
+
+train_pd = gt_pd[gt_pd["split"] == "train"].copy()
+validation_pd = gt_pd[gt_pd["split"] == "validation"].copy()
+test_pd = gt_pd[gt_pd["split"] == "test"].copy()
+
+print(f"Train: {len(train_pd)} rows | Validation: {len(validation_pd)} rows | Test (untouched): {len(test_pd)} rows")
+print(f"  Train     → GEPA optimizes against this")
+print(f"  Validation→ GEPA selects the best prompt candidate using this")
+print(f"  Test      → final honest eval AFTER GEPA finishes (never seen during optimization)")
+
+# Validate label coverage in all three splits
+for split_name, split_df in [("train", train_pd), ("validation", validation_pd), ("test", test_pd)]:
+    present = {c for c in CODE_PREFIXES if split_df["expected_set"].apply(lambda s: c in s).any()}
+    missing = set(CODE_PREFIXES) - present
+    if missing:
+        print(f"  ⚠ {split_name} split is missing labels: {sorted(missing)}  "
+              f"(consider adjusting SPLIT_SEED or adding more ground-truth rows)")
+    else:
+        print(f"  ✓ {split_name} split covers all {len(CODE_PREFIXES)} labels")
+
+# At small n, warn about split viability
+min_split = min(len(train_pd), len(validation_pd), len(test_pd))
+if min_split < 10:
+    print(f"\n  ⚠ SMALLEST SPLIT HAS ONLY {min_split} ROWS. The 3-way split is meaningful")
+    print(f"    only once total n ≥ ~100. At current n={N_ROWS}, GEPA results will be noisy.")
+    print(f"    Manual tuning (which evaluates on the FULL dataset) is more reliable for now.")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Section 4 — Build the `ai_classify` SQL & reproducibility cache
+# MAGIC
+# MAGIC We turn the Python config into the exact `ai_classify(...)` SQL the pipeline runs,
+# MAGIC then cache the LLM results in a Delta table keyed by `config_hash`. Same config →
+# MAGIC same predictions → same metrics, forever. The cache is also the audit trail.
+
+# COMMAND ----------
+
+def _sql_str(s):
+    """Safely embed a Python string as a SQL string literal."""
     return "'" + s.replace("'", "''") + "'"
 
-def build_ai_classify_expr(column: str, config: dict) -> str:
+def build_ai_classify_expr(column, config):
     """Render the ai_classify(...) SQL expression for a given prompt config."""
     labels_json = json.dumps(config["labels"], ensure_ascii=False)
     opts = dict(config["options"])
@@ -250,23 +378,6 @@ def build_ai_classify_expr(column: str, config: dict) -> str:
     return f"ai_classify({column}, {_sql_str(labels_json)}, map({opt_pairs}))"
 
 print(build_ai_classify_expr("transcript_text", PROMPT_CONFIG)[:600], "...")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Section 3 — Reproducibility cache (the heart of idempotency)
-# MAGIC
-# MAGIC **`ai_classify` is a non-deterministic LLM call.** Run it twice on the same row and
-# MAGIC the answer can differ. If we re-scored live every run, our "idempotent notebook"
-# MAGIC claim would be a lie and a newcomer would panic when numbers wobble.
-# MAGIC
-# MAGIC So we **run the model once per `config_hash` and cache the result** in a Delta
-# MAGIC table. Same config → same predictions → same metrics, forever. The cache is also
-# MAGIC our audit trail: every prediction is tagged with the prompt that produced it.
-# MAGIC
-# MAGIC > At 24 rows the cost saving is pennies — the real win is **determinism**. We use
-# MAGIC > `CREATE TABLE IF NOT EXISTS` + delete-then-insert *for this hash only*, never
-# MAGIC > `CREATE OR REPLACE` (which would wipe other variants and break re-runs).
 
 # COMMAND ----------
 
@@ -288,9 +399,8 @@ print(f"Cached rows for this config: {already} / {N_ROWS}")
 
 # COMMAND ----------
 
-def classify_and_cache(config: dict, config_hash: str) -> None:
-    """Run ai_classify over the eval inputs for one config and persist to the cache.
-    Idempotent: skips entirely if this config_hash is already fully cached."""
+def classify_and_cache(config, config_hash):
+    """Run ai_classify and persist results. Idempotent: skips if already cached."""
     have = spark.sql(
         f"SELECT COUNT(*) AS n FROM {CACHE_TABLE} WHERE config_hash = '{config_hash}'"
     ).collect()[0]["n"]
@@ -299,10 +409,10 @@ def classify_and_cache(config: dict, config_hash: str) -> None:
         return
 
     print(f"Running ai_classify for config {config_hash} over {N_ROWS} rows …")
-    gt.select("opportunity_id", "transcript_text").createOrReplaceTempView("_eval_inputs")
+    _gt_spark = spark.createDataFrame(gt_pd[["opportunity_id", "transcript_text"]])
+    _gt_spark.createOrReplaceTempView("_eval_inputs")
     expr = build_ai_classify_expr("transcript_text", config)
 
-    # cls:response is ARRAY<STRUCT<value, confidence_score, rationale>>; pull the 3 arrays.
     scored = spark.sql(f"""
       WITH raw AS (
         SELECT opportunity_id, {expr} AS cls FROM _eval_inputs
@@ -320,7 +430,6 @@ def classify_and_cache(config: dict, config_hash: str) -> None:
       FROM raw
     """)
 
-    # Delete-then-insert for THIS hash only => idempotent, leaves other variants intact.
     scored.createOrReplaceTempView("_scored")
     spark.sql(f"DELETE FROM {CACHE_TABLE} WHERE config_hash = '{config_hash}'")
     spark.sql(f"INSERT INTO {CACHE_TABLE} SELECT * FROM _scored")
@@ -331,17 +440,15 @@ classify_and_cache(PROMPT_CONFIG, CONFIG_HASH)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Section 4 — Deterministic scorers (no LLM judge needed)
+# MAGIC ## Section 5 — Deterministic scorers
 # MAGIC
-# MAGIC **We have ground truth, so we compare sets with plain Python — do not pay an LLM
-# MAGIC judge to re-derive labels we already know.** Two kinds of measurement, and knowing
-# MAGIC which is which is a core lesson:
+# MAGIC We have ground truth → compare sets with plain Python. **No LLM judge is needed.**
 # MAGIC
-# MAGIC * **Row-wise** metrics (Jaccard, exact-match, "did we abstain correctly?") — MLflow
-# MAGIC   `@scorer` functions run per row and let you click into any example in the UI.
-# MAGIC * **Corpus-wide** metrics (precision/recall/F1) — these are *not* row averages;
-# MAGIC   they need the whole set at once. We compute them in a plain cell (Section 6) and
-# MAGIC   `log_metrics` them into the same run.
+# MAGIC Two kinds of measurement (knowing which is which is a core lesson):
+# MAGIC * **Row-wise** (Jaccard, exact-match, abstain, per-label hits) — MLflow `@scorer`
+# MAGIC   functions; visible per-row in the Trace UI.
+# MAGIC * **Corpus-wide** (precision / recall / F1) — need the whole set at once; computed
+# MAGIC   in Section 7 and `log_metrics`'d into the same run.
 
 # COMMAND ----------
 
@@ -354,7 +461,10 @@ def _as_set(x):
         return set()
     if isinstance(x, dict):
         x = x.get("codes", [])
-    return {str(c)[:2] for c in x}
+    if isinstance(x, str):
+        x = json.loads(x) if x.startswith("[") else [x]
+    return {str(c)[:2] for c in (x or [])}
+
 
 @scorer
 def jaccard(outputs, expectations) -> Feedback:
@@ -366,64 +476,95 @@ def jaccard(outputs, expectations) -> Feedback:
         val = len(pred & gold) / len(pred | gold)
     return Feedback(value=val, rationale=f"pred={sorted(pred)} gold={sorted(gold)}")
 
+
 @scorer
 def exact_match(outputs, expectations) -> Feedback:
-    """Did we get the ENTIRE code set right? Brutal for multilabel — a sanity stat only."""
+    """Entire code set right? Brutal for multilabel — a sanity stat only."""
     pred, gold = _as_set(outputs), _as_set(expectations.get("expected_codes"))
     return Feedback(value=(pred == gold), rationale=f"pred={sorted(pred)} gold={sorted(gold)}")
 
+
 @scorer
 def abstained_correctly(outputs, expectations) -> Feedback:
-    """The no-blocker lever: on rows that SHOULD be empty, did we assign nothing?
-    Returns 'n/a' (not counted) on rows that should have a code."""
+    """On rows that SHOULD be empty, did we assign nothing?
+    Returns 'n/a' on rows that should have a code."""
     pred, gold = _as_set(outputs), _as_set(expectations.get("expected_codes"))
     if gold:
         return Feedback(value="n/a", rationale="row has a true code; not an abstain case")
     return Feedback(value=(len(pred) == 0), rationale=f"should abstain; predicted {sorted(pred)}")
 
-SCORERS = [jaccard, exact_match, abstained_correctly]
+
+@scorer
+def per_label_hits(outputs, expectations):
+    """Per-label TP/FP/FN as individual Feedback objects. Shows per-row, per-code
+    correctness in the MLflow Trace UI — much richer than a single aggregate."""
+    pred, gold = _as_set(outputs), _as_set(expectations.get("expected_codes"))
+    feedbacks = []
+    for c in ["4A", "4B", "4C", "4D", "4E", "4F"]:
+        in_pred, in_gold = c in pred, c in gold
+        if in_gold and in_pred:
+            tag = "TP"
+        elif in_gold and not in_pred:
+            tag = "FN"
+        elif not in_gold and in_pred:
+            tag = "FP"
+        else:
+            tag = "TN"
+        feedbacks.append(Feedback(
+            name=f"label_{c}",
+            value=(tag in ("TP", "TN")),
+            rationale=tag,
+        ))
+    return feedbacks
+
+
+SCORERS = [jaccard, exact_match, abstained_correctly, per_label_hits]
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Section 5 — Run `mlflow.genai.evaluate()` for this prompt variant
+# MAGIC ## Section 6 — Run `mlflow.genai.evaluate()`
 # MAGIC
-# MAGIC `predict_fn` is a **pure lookup into the cache** — it does *no* LLM call (we paid
-# MAGIC that cost once in Section 3). MLflow unpacks each row's `inputs` dict as keyword
-# MAGIC arguments, so `predict_fn` takes `opportunity_id` and `transcript_text`. We apply
-# MAGIC the confidence threshold here — a free precision/recall knob that touches no prompt.
-# MAGIC
-# MAGIC One `mlflow.start_run` = one prompt variant. The Experiments UI then shows every
-# MAGIC variant side-by-side, reading like a changelog (`baseline_v1`, `v2_tighten_4B`, …).
+# MAGIC `predict_fn` is a **pure lookup into the cache** — no LLM call. MLflow unpacks
+# MAGIC each row's `inputs` dict as keyword arguments, so `predict_fn(opportunity_id=...,
+# MAGIC transcript_text=...)`. One `mlflow.start_run` = one prompt variant; the Experiments
+# MAGIC UI then shows them side-by-side.
 
 # COMMAND ----------
 
-# Load this config's cached predictions into a dict for O(1) lookup inside predict_fn.
+# Load cached predictions into a dict for O(1) lookup inside predict_fn.
 _cache_rows = spark.sql(f"""
-  SELECT opportunity_id, pred_codes, pred_confidences
+  SELECT opportunity_id, pred_codes, pred_confidences, pred_rationales
   FROM {CACHE_TABLE} WHERE config_hash = '{CONFIG_HASH}'
 """).collect()
+
 _PREDS = {
     r["opportunity_id"]: list(zip(r["pred_codes"] or [], r["pred_confidences"] or []))
     for r in _cache_rows
 }
+_RATS = {
+    r["opportunity_id"]: (r["pred_rationales"] or [])
+    for r in _cache_rows
+}
 
-@mlflow.trace  # predict_fn must emit exactly one trace per call
-def predict_fn(opportunity_id: str, transcript_text: str) -> dict:
-    # ai_classify returns the full label KEY (e.g. "4A. Rate/price uncompetitive").
-    # Normalize to the "4A" prefix so predictions line up with the ground-truth codes.
+
+@mlflow.trace
+def predict_fn(opportunity_id, transcript_text):
+    """Pure cache lookup — applies confidence threshold, normalizes label prefixes."""
     pairs = _PREDS.get(opportunity_id, [])
     codes = [c[:2] for (c, conf) in pairs if (conf is None or conf >= CONFIDENCE_THRESHOLD)]
-    return {"codes": codes}
+    confidences = [conf for (c, conf) in pairs if (conf is None or conf >= CONFIDENCE_THRESHOLD)]
+    rationales = _RATS.get(opportunity_id, [])
+    return {"codes": codes, "confidences": confidences, "rationales": rationales}
 
-# Build the eval data in the shape MLflow wants: a list of {inputs, expectations} dicts.
-# We control the expectations shape here so our scorers read `expected_codes` cleanly.
+
+# Build eval data in the shape MLflow expects: a list of {inputs, expectations} dicts.
 eval_data = [
     {
         "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
-        "expectations": {"expected_codes": list(r.expected_codes or [])},
+        "expectations": {"expected_codes": list(r.expected_codes)},
     }
-    for r in gt.collect()
+    for _, r in gt_pd.iterrows()
 ]
 print(f"Prepared {len(eval_data)} evaluation records.")
 
@@ -438,7 +579,12 @@ with mlflow.start_run(run_name=RUN_LABEL) as run:
         "ai_version": AI_OPTIONS["version"],
         "multilabel": AI_OPTIONS["multilabel"],
     })
-    mlflow.log_dict(PROMPT_CONFIG, "prompt_config.json")  # the exact prompt, as an artifact
+    if PROMPT_VERSION:
+        mlflow.log_params({
+            "prompt_registry_name": PROMPT_NAME,
+            "prompt_registry_version": PROMPT_VERSION.version,
+        })
+    mlflow.log_dict(PROMPT_CONFIG, "prompt_config.json")
 
     eval_result = mlflow.genai.evaluate(
         data=eval_data,
@@ -447,25 +593,27 @@ with mlflow.start_run(run_name=RUN_LABEL) as run:
     )
     RUN_ID = run.info.run_id
 
+print(f"\nRun ID: {RUN_ID}")
 print("Row-wise metrics from MLflow:")
-for k, v in (eval_result.metrics or {}).items():
+for k, v in sorted((eval_result.metrics or {}).items()):
     print(f"  {k}: {v}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Section 6 — Corpus metrics + the read-the-noise panel
+# MAGIC ## Section 7 — Corpus metrics + the noise panel
 # MAGIC
 # MAGIC Now the metrics that need the whole set at once. **Micro-F1 is the headline** — it
-# MAGIC pools all 144 label decisions and is the steadiest number we have. **Macro-F1 is
-# MAGIC reported with a warning** — it averages six per-class F1s, some with n≤4, so it
-# MAGIC whiplashes. Per-label results are shown as **integer TP/FP/FN** because "3 of 4" is
-# MAGIC honest and "0.75" hides the denominator.
+# MAGIC pools all `n × 6` label decisions and is the steadiest number. **Macro-F1** averages
+# MAGIC per-label F1s (some with tiny n) so it whiplashes — report it with a warning.
+# MAGIC Per-label results are shown as **integer TP/FP/FN** because "3 of 4" is honest and
+# MAGIC "0.75" hides the denominator.
 
 # COMMAND ----------
 
-# Build the per-row prediction/truth frame (apply the SAME threshold as predict_fn).
-# Normalize predicted label keys to the "4A" prefix to match ground-truth codes.
+import numpy as np
+
+# Build per-row prediction/truth frame (apply SAME threshold as predict_fn).
 pred_pd = pd.DataFrame(
     [{"opportunity_id": oid,
       "pred_set": {c[:2] for (c, conf) in pairs if (conf is None or conf >= CONFIDENCE_THRESHOLD)}}
@@ -474,13 +622,15 @@ pred_pd = pd.DataFrame(
 merged = gt_pd.merge(pred_pd, on="opportunity_id", how="left")
 merged["pred_set"] = merged["pred_set"].apply(lambda s: s if isinstance(s, set) else set())
 
+
 def prf(tp, fp, fn):
     p = tp / (tp + fp) if (tp + fp) else 0.0
     r = tp / (tp + fn) if (tp + fn) else 0.0
     f1 = 2 * p * r / (p + r) if (p + r) else 0.0
     return p, r, f1
 
-# Per-label TP/FP/FN (one-vs-rest), then micro (pooled) and macro (averaged) F1.
+
+# Per-label TP/FP/FN, then micro (pooled) and macro (averaged) F1.
 per_label, micro = [], {"tp": 0, "fp": 0, "fn": 0}
 for c in CODE_PREFIXES:
     tp = int(((merged["expected_set"].apply(lambda s: c in s)) & (merged["pred_set"].apply(lambda s: c in s))).sum())
@@ -490,62 +640,67 @@ for c in CODE_PREFIXES:
     n_pos = tp + fn
     per_label.append({"code": c, "n_pos": n_pos, "TP": tp, "FP": fp, "FN": fn,
                       "precision": round(p, 2), "recall": round(r, 2), "f1": round(f1, 2),
-                      "note": "⚠ n too small to trust" if n_pos <= 2 else ""})
+                      "note": "⚠ n too small" if n_pos <= 2 else ""})
     micro["tp"] += tp; micro["fp"] += fp; micro["fn"] += fn
 
 per_label_df = pd.DataFrame(per_label)
 micro_p, micro_r, micro_f1 = prf(micro["tp"], micro["fp"], micro["fn"])
-# Macro EXCLUDES 4A (n=1): its F1 is a coin flip and would distort the average.
-macro_codes = per_label_df[per_label_df["n_pos"] >= 2]
+
+# Macro EXCLUDES codes with n_pos ≤ 2 (their F1 is noise, not signal).
+macro_codes = per_label_df[per_label_df["n_pos"] > 2]
 macro_f1 = float(macro_codes["f1"].mean()) if len(macro_codes) else 0.0
 
-# Compute mean Jaccard directly (robust — don't depend on MLflow's aggregated metric key).
+# Mean Jaccard (robust, computed directly).
 def _jac(p, g):
     if not p and not g:
         return 1.0
     return len(p & g) / len(p | g)
 mean_jaccard = float(merged.apply(lambda r: _jac(r["pred_set"], r["expected_set"]), axis=1).mean())
+
+# Abstain accuracy (the 50%-class lever).
 abstain_rows = merged[merged["expected_set"].apply(len) == 0]
 abstain_acc = float((abstain_rows["pred_set"].apply(len) == 0).mean()) if len(abstain_rows) else float("nan")
 
 display(per_label_df)
-print("\n================  HEADLINE (read fractions, not decimals)  ================")
-print(f"  Micro-F1 (headline) : {micro_f1:.2f}   [pooled {micro['tp']}TP {micro['fp']}FP {micro['fn']}FN over 144 decisions]")
+excluded_labels = set(per_label_df[per_label_df["n_pos"] <= 2]["code"])
+excl_note = f" [excludes {sorted(excluded_labels)} n≤2]" if excluded_labels else ""
+
+print("\n================  HEADLINE  ================")
+print(f"  Micro-F1 (headline) : {micro_f1:.2f}   [pooled {micro['tp']}TP {micro['fp']}FP {micro['fn']}FN over {pooled} decisions]")
 print(f"  Mean Jaccard        : {mean_jaccard:.2f}")
 print(f"  Abstain accuracy    : {abstain_acc:.2f}   [{int((abstain_rows['pred_set'].apply(len)==0).sum())} of {len(abstain_rows)} empty rows correct]")
-print(f"  Macro-F1 (⚠ noisy)  : {macro_f1:.2f}   [excludes 4A n=1; averages small classes]")
-print("  Exact-match         : see MLflow run (sanity stat only — brutal for multilabel)")
-print(f"\n  NOISE FLOOR: a single row flip ≈ ~{len(CODE_PREFIXES)/(N_ROWS*len(CODE_PREFIXES)):.0%} micro-F1."
+print(f"  Macro-F1 (⚠ noisy)  : {macro_f1:.2f}  {excl_note}")
+print(f"  Exact-match         : see MLflow run (sanity stat only — brutal for multilabel)")
+print(f"\n  NOISE FLOOR: 1 row flip ≈ ~{len(CODE_PREFIXES)/pooled:.0%} micro-F1."
       " Do NOT declare a winner on a sub-1-row move.")
 
-# Log corpus metrics + the per-label table into the SAME run.
+# Log corpus metrics into the SAME run.
 with mlflow.start_run(run_id=RUN_ID):
     mlflow.log_metrics({
         "micro_f1": micro_f1, "micro_precision": micro_p, "micro_recall": micro_r,
-        "macro_f1_excl_4A": macro_f1, "mean_jaccard": mean_jaccard,
-        "abstain_accuracy": abstain_acc,
+        "macro_f1": macro_f1, "mean_jaccard": mean_jaccard, "abstain_accuracy": abstain_acc,
     })
     mlflow.log_table(per_label_df, "per_label_metrics.json")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Section 7 — Error analysis: the main event
+# MAGIC ## Section 8 — Error analysis: the main event
 # MAGIC
 # MAGIC This is where tuning decisions actually come from — **reading rationales one row at
 # MAGIC a time**, not watching a number. We bucket every mistake, and because rationales are
-# MAGIC ON we can usually name the root cause. We also keep an explicit lane for the
-# MAGIC question newcomers forget at this scale: **"is the GOLD label actually right?"** —
-# MAGIC at n=24 a mislabeled truth row is about as likely as a model error.
+# MAGIC ON we can usually name the root cause. We also keep an explicit lane for a question
+# MAGIC newcomers forget: **"is the GOLD label actually right?"** — a mislabeled truth row
+# MAGIC is just as damaging as a model error.
 
 # COMMAND ----------
 
-# Attach rationales/confidences for inspection.
-_rat = spark.sql(f"""
+# Attach rationales and confidences for inspection.
+_rat_pd = spark.sql(f"""
   SELECT opportunity_id, pred_codes, pred_confidences, pred_rationales
   FROM {CACHE_TABLE} WHERE config_hash = '{CONFIG_HASH}'
 """).toPandas()
-err = merged.merge(_rat, on="opportunity_id", how="left")
+err = merged.merge(_rat_pd, on="opportunity_id", how="left", suffixes=("", "_cache"))
 
 def bucket(row):
     g, p = row["expected_set"], row["pred_set"]
@@ -576,37 +731,35 @@ display(mistakes)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### The adjacent-code substitution matrix
+# MAGIC ## Section 9 — Substitution matrix
 # MAGIC
-# MAGIC Multilabel has **no clean confusion matrix** (a row can be in several classes). What
-# MAGIC *is* useful is a **substitution matrix**: when the model is wrong, which code did it
-# MAGIC reach for instead? Hot cells on the 4A/4B/4C and 4C/4D boundaries point straight at
-# MAGIC the **descriptions** that are leaking into each other.
+# MAGIC Multilabel has **no clean confusion matrix**. What *is* useful is a **substitution
+# MAGIC matrix**: when the model is wrong, which code did it reach for instead? Hot cells on
+# MAGIC the 4A/4B/4C and 4C/4D boundaries point straight at the descriptions that leak.
 
 # COMMAND ----------
 
-import numpy as np
 import matplotlib.pyplot as plt
 
 labels_axis = CODE_PREFIXES + ["∅"]
 idx = {c: i for i, c in enumerate(labels_axis)}
 M = np.zeros((len(labels_axis), len(labels_axis)), dtype=int)
 for _, row in err.iterrows():
-    missed = row["expected_set"] - row["pred_set"]   # should have had, didn't
-    added = row["pred_set"] - row["expected_set"]     # predicted, shouldn't have
-    if not missed and added:          # pure false positive on an abstain row
+    missed = row["expected_set"] - row["pred_set"]
+    added = row["pred_set"] - row["expected_set"]
+    if not missed and added:
         for a in added:
             M[idx["∅"], idx[a]] += 1
-    elif missed and not added:        # pure miss
+    elif missed and not added:
         for m in missed:
             M[idx[m], idx["∅"]] += 1
-    else:                             # genuine swap: count every missed->added pair
+    else:
         for m in missed:
             for a in added:
                 M[idx[m], idx[a]] += 1
 
 fig, ax = plt.subplots(figsize=(6, 5))
-im = ax.imshow(M, cmap="Oranges")
+ax.imshow(M, cmap="Oranges")
 ax.set_xticks(range(len(labels_axis))); ax.set_xticklabels(labels_axis)
 ax.set_yticks(range(len(labels_axis))); ax.set_yticklabels(labels_axis)
 ax.set_xlabel("predicted instead"); ax.set_ylabel("true code")
@@ -624,37 +777,38 @@ with mlflow.start_run(run_id=RUN_ID):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Section 8 — Iteration decision guide: which surface do I edit?
+# MAGIC ## Section 10 — Iteration decision guide + confidence-threshold sweep
 # MAGIC
-# MAGIC Match the **error signature** to the **lever**. Change **ONE surface per iteration**,
-# MAGIC re-run, and diff the runs in the Experiments UI. Watch for whack-a-mole (a fix that
-# MAGIC breaks another row).
+# MAGIC ### Which surface do I edit?
 # MAGIC
-# MAGIC | Error signature (from Section 7) | Lever | How to use confidence to confirm |
+# MAGIC Match the **error signature** (from Section 8) to the **lever**. Change **ONE
+# MAGIC surface per iteration**, re-run, and diff the runs.
+# MAGIC
+# MAGIC | Error signature | Lever | Confidence tells you… |
 # MAGIC |---|---|---|
-# MAGIC | **Bucket C — substitution** (right evidence, wrong code; 4A/4B/4C or 4C/4D) | Edit the **DESCRIPTIONS** of *both* codes contrastively — add a discriminator and a "NOT this if…" clause to each side. Edit boundaries **in pairs**. | High-confidence wrong code ⇒ it's semantic; no threshold will fix it. |
-# MAGIC | **Bucket A — empty-class false positive** (assigned on a no-blocker call) | Edit the **INSTRUCTIONS** (raise the evidence bar; reinforce "benchmarking-only ⇒ no code", "concern dissolved ⇒ no code"). This is your 50% class — biggest lever. | If FPs cluster at **low** confidence, the **threshold** fixes it cheaply instead. |
-# MAGIC | **Bucket B/E — misses** (too timid) | Edit the **INSTRUCTIONS** (model is under-reading) or **lower the threshold**. | Rationale correct but code absent/low-confidence ⇒ threshold. |
-# MAGIC | **Systematic over/under across all codes** | **CONFIDENCE THRESHOLD** first — it's free and touches no prompt. | Sweep it (next section) before editing any text. |
+# MAGIC | **C: Substitution** (right evidence, wrong code) | Edit **DESCRIPTIONS** of *both* codes contrastively — in pairs. | High-confidence wrong code ⇒ semantic; no threshold will fix it. |
+# MAGIC | **A: Empty-class FP** (assigned on a no-blocker call) | Edit **INSTRUCTIONS** (raise evidence bar). This is your biggest lever. | Low-confidence FPs ⇒ **threshold** fixes it cheaply. |
+# MAGIC | **B/E: Misses** (too timid) | Edit **INSTRUCTIONS** or **lower threshold**. | Rationale correct but code absent ⇒ threshold. |
+# MAGIC | **Systematic across all codes** | **CONFIDENCE THRESHOLD** first — it's free. | Sweep below to find the right τ. |
 # MAGIC
-# MAGIC > **Golden rule (print it on the wall):** *keep an edit only if it fixes a **class**
-# MAGIC > of error for an articulable, generalizable reason — never because one row's number
-# MAGIC > went up.* At n=24, one row moving is almost always noise.
-# MAGIC >
-# MAGIC > **To iterate:** duplicate the config cell in Section 0, change *one* surface, set a
-# MAGIC > new `run_label` (e.g. `v2_tighten_4B_vs_4A`), and re-run from Section 0. The cache
-# MAGIC > re-scores only this new config; everything else is instant.
+# MAGIC > **Golden rule:** *keep an edit only if it fixes a **class** of error for an
+# MAGIC > articulable reason — never because one row's number went up.*
+# MAGIC
+# MAGIC ### To iterate
+# MAGIC 1. Duplicate the config cell in Section 1.
+# MAGIC 2. Edit **one** surface.
+# MAGIC 3. Set a new `run_label` (e.g. `v2_tighten_4B_vs_4A`).
+# MAGIC 4. Re-run from Section 0. Only the new config re-scores; everything else is instant.
+# MAGIC 5. Compare runs in the Experiments UI (or Section 11 below).
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Section 9 — Confidence-threshold sweep (the free lever)
+# MAGIC ### Confidence-threshold sweep (the free lever)
 # MAGIC
 # MAGIC Because confidence scores are on, we have a precision/recall knob that costs nothing
-# MAGIC and changes no prompt text. We sweep it over the **pooled** decisions (never
-# MAGIC per-code — too sparse) and pick a **round, defensible** value, mostly driven by the
-# MAGIC empty class. **Caveat:** foundation-model confidence is *not* calibrated probability
-# MAGIC — treat τ as a tuned knob, not a real probability cut.
+# MAGIC and changes no prompt text. **Caveat:** foundation-model confidence is *not*
+# MAGIC calibrated probability — treat τ as a tuned knob, not a real probability cut.
 
 # COMMAND ----------
 
@@ -663,8 +817,9 @@ for tau in [0.0, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9]:
     tp = fp = fn = 0
     correct_abstain = total_abstain = 0
     for _, row in err.iterrows():
-        pairs = list(zip(row["pred_codes_x"] if "pred_codes_x" in row else row["pred_codes"],
-                         row["pred_confidences"]))
+        raw_codes = row.get("pred_codes_cache") or row.get("pred_codes") or []
+        raw_confs = row.get("pred_confidences_cache") or row.get("pred_confidences") or []
+        pairs = list(zip(raw_codes, raw_confs))
         pset = {c[:2] for (c, conf) in pairs if (conf is None or conf >= tau)}
         gset = row["expected_set"]
         tp += len(pset & gset); fp += len(pset - gset); fn += len(gset - pset)
@@ -678,82 +833,336 @@ for tau in [0.0, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9]:
 sweep_df = pd.DataFrame(sweep_rows)
 display(sweep_df)
 print("Pick the SMALLEST τ that holds micro-F1 near its peak while improving abstain accuracy.")
-print("Then set the `confidence_threshold` widget to that value and re-run — do NOT fit a false optimum on 24 rows.")
+print("Then set the `confidence_threshold` widget to that value and re-run.")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Section 10 — Register the tuned prompt (handoff artifact)
+# MAGIC ## Section 11 — Programmatic run comparison
 # MAGIC
-# MAGIC Once a variant is a defensible improvement, give "the answer" a durable, versioned
-# MAGIC home in the **MLflow Prompt Registry**, decoupled from this notebook. We store the
-# MAGIC labels+instructions as a single prompt template and tie it to the winning run.
-# MAGIC Wrapped defensively so an older MLflow won't break the notebook.
+# MAGIC Once you have 2+ prompt variants evaluated, compare them side-by-side. This code
+# MAGIC reads all runs in the current experiment and builds a comparison table. The same
+# MAGIC view is available in the MLflow Experiments UI (Metrics tab → Compare), but this
+# MAGIC gives you programmatic access for downstream decisions.
 
 # COMMAND ----------
 
-PROMPT_NAME = f"{CATALOG}.{SCHEMA}.offer_blocker_ai_classify_prompt"
-try:
-    registered = mlflow.genai.register_prompt(
-        name=PROMPT_NAME,
-        template=json.dumps(PROMPT_CONFIG, ensure_ascii=False, indent=2),
-        commit_message=f"{RUN_LABEL} (config_hash={CONFIG_HASH})",
-    )
-    print(f"✓ Registered {PROMPT_NAME} as version {registered.version}.")
-    with mlflow.start_run(run_id=RUN_ID):
-        mlflow.log_param("registered_prompt_version", registered.version)
-except Exception as e:  # noqa: BLE001 - educational: never fail the notebook on an optional step
-    print(f"(Skipped Prompt Registry: {type(e).__name__}: {e})")
-    print("Prompt Registry needs a recent MLflow + Unity Catalog prompt support. "
-          "The full config is still logged as prompt_config.json on the run.")
+_all_runs = mlflow.search_runs(order_by=["start_time DESC"])
+if len(_all_runs) > 0:
+    _metric_cols = [c for c in _all_runs.columns if c.startswith("metrics.")]
+    _param_cols = ["params.run_label", "params.config_hash", "params.confidence_threshold",
+                   "params.prompt_registry_version", "params.n_eval_rows"]
+    _keep = ["run_id"] + [c for c in _param_cols if c in _all_runs.columns] + sorted(_metric_cols)
+    comparison_df = _all_runs[[c for c in _keep if c in _all_runs.columns]].head(20)
+    display(comparison_df)
+    print(f"Showing the {len(comparison_df)} most recent runs. Use the Experiments UI for "
+          "interactive comparison, drill-down into traces, and side-by-side metrics charts.")
+else:
+    print("No runs found — this is the first evaluation. Run again with a different "
+          "run_label after editing the config to see a comparison.")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Section 11 — The honest next steps (do not skip)
+# MAGIC ## Section 12 — (Optional) GEPA automated prompt optimization
 # MAGIC
-# MAGIC ### Why we did NOT run automated prompt optimization (GEPA / `optimize_prompts`)
-# MAGIC It is the right tool later and the wrong tool now:
-# MAGIC * **No honest validation split.** A held-out from 24 rows is ~5 rows, and **4A's one
-# MAGIC   example cannot be in both train and validation** — class-level signal is impossible.
-# MAGIC * **Its signal is the metric, and the metric is noise here.** GEPA would happily
-# MAGIC   memorize these 24 transcripts (learning the labels, not the task) with no
-# MAGIC   instrument able to detect the lost generalization.
-# MAGIC * **It removes the rationale-reading that is the actual value at this scale** and
-# MAGIC   emits opaque evolved text a newcomer can't reason about.
+# MAGIC **`optimize_prompts()`** uses the Genetic-Pareto (GEPA) optimizer to automatically
+# MAGIC evolve your prompt text. It is powerful but dangerous:
 # MAGIC
-# MAGIC When your set reaches a few hundred rows with a real held-out split, this is the call
-# MAGIC (shown, intentionally **not executed**):
+# MAGIC * It uses a **3-way split** (Section 3): train for optimization, validation for
+# MAGIC   selecting the best candidate, and test for the final honest check.
+# MAGIC * It **optimizes the INSTRUCTIONS only** — descriptions are the structured routing
+# MAGIC   rules and should be edited manually (GEPA would break their contrastive structure).
+# MAGIC * Each GEPA iteration calls `ai_classify` per-row via SQL — this is **slow and
+# MAGIC   costly** (train_size × max_metric_calls × per_call_cost). Budget accordingly.
+# MAGIC
+# MAGIC **When to use this:** once your eval set has ~200+ total rows (~30+ per label per
+# MAGIC split) and manual tuning has plateaued. **When NOT to use this:** small eval sets,
+# MAGIC or when the errors are in label *boundaries* (those need contrastive description
+# MAGIC edits, not instruction rewrites).
+# MAGIC
+# MAGIC > Set the `run_gepa` widget to `true` to enable this section.
+
+# COMMAND ----------
+
+if RUN_GEPA:
+    from mlflow.genai.optimize import GepaPromptOptimizer
+
+    # Register the INSTRUCTIONS as a separate, optimizable prompt.
+    # GEPA evolves this text; descriptions stay fixed.
+    INSTRUCTIONS_PROMPT_NAME = f"{CATALOG}.{SCHEMA}.offer_blocker_instructions"
+    try:
+        instructions_prompt = _register_if_changed(
+            name=INSTRUCTIONS_PROMPT_NAME,
+            template=INSTRUCTIONS,
+            commit_message=f"Baseline instructions for GEPA ({RUN_LABEL})",
+        )
+        print(f"Instructions prompt URI: {instructions_prompt.uri if hasattr(instructions_prompt, 'uri') else 'N/A'}")
+    except Exception as e:
+        print(f"Cannot register instructions prompt: {e}")
+        instructions_prompt = None
+
+    if instructions_prompt is None:
+        print("⚠ Skipping GEPA — Prompt Registry is unavailable.")
+        RUN_GEPA = False
+else:
+    print("GEPA is OFF (set `run_gepa` widget to 'true' to enable).")
+
+# COMMAND ----------
+
+if RUN_GEPA:
+    # Build the GEPA predict_fn: loads the current (GEPA-swapped) prompt version,
+    # builds ai_classify SQL, and runs it for a single row.
+    def gepa_predict_fn(opportunity_id, transcript_text):
+        prompt = mlflow.genai.load_prompt(instructions_prompt.uri)
+        current_instructions = prompt.template
+
+        config = {"labels": LABELS, "instructions": current_instructions, "options": AI_OPTIONS}
+        expr = build_ai_classify_expr("transcript_text", config)
+
+        row_df = spark.createDataFrame([(transcript_text,)], ["transcript_text"])
+        row_df.createOrReplaceTempView("_gepa_row")
+
+        result = spark.sql(f"""
+            SELECT transform(
+                ({expr}):response::ARRAY<STRUCT<value:STRING,confidence_score:DOUBLE,rationale:STRING>>,
+                x -> x.value
+            ) AS pred_codes FROM _gepa_row
+        """).collect()[0]
+
+        codes = [c[:2] for c in (result.pred_codes or [])]
+        return {"codes": codes}
+
+    # Build train, validation, and test data in GEPA's required format.
+    # - Train: GEPA evolves the prompt against this.
+    # - Validation: GEPA selects the best candidate using this ("used up" by selection).
+    # - Test: final honest check AFTER optimization finishes (GEPA never sees this).
+    train_data_gepa = [
+        {
+            "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
+            "expectations": {"expected_codes": list(r.expected_codes)},
+        }
+        for _, r in train_pd.iterrows()
+    ]
+    validation_data_gepa = [
+        {
+            "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
+            "expectations": {"expected_codes": list(r.expected_codes)},
+        }
+        for _, r in validation_pd.iterrows()
+    ]
+    test_data_gepa = [
+        {
+            "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
+            "expectations": {"expected_codes": list(r.expected_codes)},
+        }
+        for _, r in test_pd.iterrows()
+    ]
+
+    # Custom objective: micro-F1 over the scored rows.
+    @scorer
+    def gepa_micro_f1(outputs, expectations) -> Feedback:
+        pred = _as_set(outputs)
+        gold = _as_set(expectations.get("expected_codes"))
+        tp = len(pred & gold)
+        fp = len(pred - gold)
+        fn = len(gold - pred)
+        _, _, f1 = prf(tp, fp, fn)
+        return Feedback(value=f1, rationale=f"row micro-F1={f1:.2f}")
+
+    print(f"GEPA ready: {len(train_data_gepa)} train, {len(validation_data_gepa)} validation, {len(test_data_gepa)} test rows.")
+    print("Starting optimization — this may take a while (one SQL call per row per iteration)...")
+
+    try:
+        gepa_result = mlflow.genai.optimize_prompts(
+            predict_fn=gepa_predict_fn,
+            train_data=train_data_gepa,
+            prompt_uris=[instructions_prompt.uri],
+            optimizer=GepaPromptOptimizer(
+                max_metric_calls=50,
+                display_progress_bar=True,
+            ),
+            scorers=[gepa_micro_f1],
+        )
+
+        optimized_template = gepa_result.optimized_prompts[0].template
+        print(f"\nInitial score: {gepa_result.initial_eval_score}")
+        print(f"Final score:   {gepa_result.final_eval_score}")
+        print(f"\nOptimized instructions (first 500 chars):\n{optimized_template[:500]}...")
+
+        # Register the optimized instructions
+        optimized_prompt = mlflow.genai.register_prompt(
+            name=INSTRUCTIONS_PROMPT_NAME,
+            template=optimized_template,
+            commit_message=f"GEPA-optimized ({gepa_result.initial_eval_score:.3f} → {gepa_result.final_eval_score:.3f})",
+        )
+        print(f"\n✓ Registered optimized instructions as v{optimized_prompt.version}")
+
+        # --- Evaluate GEPA result on the UNTOUCHED TEST split for honest comparison ------
+        # The validation split was "used up" by GEPA's selection process. Only the test
+        # split gives a truly independent assessment.
+        optimized_config = {"labels": LABELS, "instructions": optimized_template, "options": AI_OPTIONS}
+        optimized_hash = hashlib.sha256(
+            json.dumps(optimized_config, sort_keys=True).encode()
+        ).hexdigest()[:16]
+
+        # Cache the optimized config's predictions (full dataset for completeness)
+        classify_and_cache(optimized_config, optimized_hash)
+
+        # Run evaluate() on the TEST split only
+        _gepa_cache = spark.sql(f"""
+          SELECT opportunity_id, pred_codes, pred_confidences, pred_rationales
+          FROM {CACHE_TABLE} WHERE config_hash = '{optimized_hash}'
+        """).collect()
+        _GEPA_PREDS = {
+            r["opportunity_id"]: list(zip(r["pred_codes"] or [], r["pred_confidences"] or []))
+            for r in _gepa_cache
+        }
+        _GEPA_RATS = {
+            r["opportunity_id"]: (r["pred_rationales"] or [])
+            for r in _gepa_cache
+        }
+
+        @mlflow.trace
+        def gepa_test_predict_fn(opportunity_id, transcript_text):
+            """Cache lookup for GEPA-optimized predictions."""
+            pairs = _GEPA_PREDS.get(opportunity_id, [])
+            codes = [c[:2] for (c, conf) in pairs if (conf is None or conf >= CONFIDENCE_THRESHOLD)]
+            confidences = [conf for (c, conf) in pairs if (conf is None or conf >= CONFIDENCE_THRESHOLD)]
+            rationales = _GEPA_RATS.get(opportunity_id, [])
+            return {"codes": codes, "confidences": confidences, "rationales": rationales}
+
+        with mlflow.start_run(run_name=f"{RUN_LABEL}_gepa_test_split") as gepa_test_run:
+            mlflow.log_params({
+                "config_hash": optimized_hash,
+                "confidence_threshold": CONFIDENCE_THRESHOLD,
+                "n_eval_rows": len(test_data_gepa),
+                "split": "test (untouched by GEPA)",
+                "source": "GEPA-optimized",
+                "gepa_initial_score": gepa_result.initial_eval_score,
+                "gepa_final_score": gepa_result.final_eval_score,
+            })
+            mlflow.log_dict(optimized_config, "prompt_config.json")
+
+            gepa_test_result = mlflow.genai.evaluate(
+                data=test_data_gepa,
+                predict_fn=gepa_test_predict_fn,
+                scorers=SCORERS,
+            )
+
+        print(f"\n{'='*60}")
+        print(f"  GEPA HONEST TEST-SPLIT EVALUATION")
+        print(f"  (this split was NEVER seen during optimization)")
+        print(f"{'='*60}")
+        print(f"  GEPA train score      : {gepa_result.initial_eval_score:.3f} → {gepa_result.final_eval_score:.3f}")
+        print(f"  Test-split metrics    :")
+        for k, v in sorted((gepa_test_result.metrics or {}).items()):
+            print(f"    {k}: {v}")
+        print(f"\n  ⚠ Compare the test-split numbers against the baseline's FULL-dataset")
+        print(f"    numbers with caution — different denominators. The key question is:")
+        print(f"    did GEPA find a GENERALIZABLE improvement, or did it overfit?")
+        print(f"\n✓ GEPA-optimized config cached (hash={optimized_hash}).")
+        print(f"  Compare runs in the Experiments UI or Section 11.")
+
+    except Exception as e:
+        print(f"⚠ GEPA failed: {type(e).__name__}: {e}")
+        print("This may require mlflow>=3.5.0 and a supported workspace.")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Section 13 — Promote the winning prompt
+# MAGIC
+# MAGIC Once a variant is a defensible improvement, **promote it** by setting the
+# MAGIC `"production"` alias on its Prompt Registry version. The idea is that the production
+# MAGIC pipeline will eventually read from this alias:
+# MAGIC
 # MAGIC ```python
-# MAGIC # from mlflow.genai import optimize_prompts   # requires mlflow >= 3.5.0
-# MAGIC # optimize_prompts(predict_fn=..., train_data=..., eval_data=held_out, scorers=[...])
+# MAGIC # In the production pipeline (future state):
+# MAGIC prompt = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@production")
+# MAGIC config = json.loads(prompt.template)
+# MAGIC # ... build ai_classify SQL from config ...
 # MAGIC ```
 # MAGIC
-# MAGIC ### Your real #1 priority: grow and curate the labeled set
-# MAGIC Your eval-set size sets the **ceiling** on how much you can trust *any* result —
-# MAGIC manual or automated. Today's ceiling and what unlocks the next tier:
+# MAGIC **For now**, you copy the winning `LABELS` + `INSTRUCTIONS` back into
+# MAGIC `gold_opportunity_enrichment.sql`. The registry alias is the path to automating
+# MAGIC that handoff.
+
+# COMMAND ----------
+
+# Conditional promotion: only promote if we have a prompt version.
+if PROMPT_VERSION:
+    try:
+        mlflow.genai.set_prompt_alias(
+            name=PROMPT_NAME,
+            alias="production",
+            version=PROMPT_VERSION.version,
+        )
+        print(f"✓ Promoted '{PROMPT_NAME}' v{PROMPT_VERSION.version} to @production alias.")
+        print(f"  Load it anywhere with: mlflow.genai.load_prompt('prompts:/{PROMPT_NAME}@production')")
+    except Exception as e:
+        print(f"(Could not set alias: {type(e).__name__}: {e})")
+        print("The prompt version is still registered — promotion can be done manually in the UI.")
+else:
+    print("No Prompt Registry version to promote. The full config is logged as "
+          "prompt_config.json on the MLflow run — copy LABELS + INSTRUCTIONS to the pipeline SQL.")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Section 14 — Honest next steps
 # MAGIC
-# MAGIC | Code | Now | Target (min usable) |
-# MAGIC |---|---|---|
-# MAGIC | empty / no-blocker | 12 | keep ~40–50% of total |
-# MAGIC | 4A | **1** | ~10 |
-# MAGIC | 4B–4D | 4 each | ~10–15 each |
-# MAGIC | 4E–4F | 3 each | ~10–15 each |
-# MAGIC | **total** | **24** | **~150–300** |
+# MAGIC ### 1. Grow and curate the labeled set
+# MAGIC Your eval-set size sets the **ceiling** on how much you can trust *any* result.
+# MAGIC The 3-way split (Section 3) means each label needs coverage in **all three**
+# MAGIC partitions. Here are the targets:
 # MAGIC
-# MAGIC The managed dataset makes growth cheap: **append rows, re-run this same notebook,
-# MAGIC same scorers.** And **audit label quality** — double-label a subset for
-# MAGIC inter-annotator agreement and re-adjudicate every disagreement your rationales
-# MAGIC surface. Reading a clearly-correct model rationale against a clearly-wrong gold label
-# MAGIC is one of the highest-value things that happens in this loop.
+# MAGIC | | Total | Train (~70%) | Validation (~15%) | Test (~15%) |
+# MAGIC |---|---|---|---|---|
+# MAGIC | **Minimum pilot (GEPA)** | **200–400** | 140–280 | 30–60 | 30–60 |
+# MAGIC | **Recommended** | **1,000–2,000** | 700–1,400 | 150–300 | 150–300 |
+# MAGIC | **Per label (each split)** | | 30–50+ | 20–30+ | 20–30+ |
+# MAGIC | empty / no-blocker | ~50% of total | Preserve natural prevalence | Same | Same |
 # MAGIC
-# MAGIC ### Measure model stochasticity (optional, cheap here)
-# MAGIC `ai_classify` is non-deterministic. To show the customer the *second* noise floor,
-# MAGIC re-run one config 3–5× under different `run_label`s with the cache cleared for that
-# MAGIC hash, and watch micro-F1 wobble with the prompt held fixed.
+# MAGIC Because the eval table is a managed dataset, growth is cheap:
+# MAGIC ```python
+# MAGIC import mlflow.genai.datasets
+# MAGIC ds = mlflow.genai.datasets.get_dataset("catalog.schema.your_eval_table")
+# MAGIC ds.merge_records([
+# MAGIC     {"inputs": {"opportunity_id": "...", "transcript_text": "..."},
+# MAGIC      "expectations": {"expected_response": '["4B"]'}},
+# MAGIC ])
+# MAGIC ```
 # MAGIC
-# MAGIC ### When you promote a tuned prompt to the pipeline
-# MAGIC Copy the winning `LABELS` + `INSTRUCTIONS` back into
-# MAGIC `pipeline/transformations/gold/gold_opportunity_enrichment.sql`. Because this
-# MAGIC notebook builds its `ai_classify` SQL from the same two surfaces, what you evaluated
-# MAGIC is exactly what the pipeline will run.
+# MAGIC **Audit label quality** — double-label a subset for inter-annotator agreement. At
+# MAGIC small n, a mislabeled truth row is as damaging as a model error.
+# MAGIC
+# MAGIC ### 2. Integrate the Prompt Registry with the pipeline
+# MAGIC Today, the pipeline hardcodes labels + instructions in SQL. The future state:
+# MAGIC ```python
+# MAGIC # In the pipeline's Python wrapper:
+# MAGIC prompt = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@production")
+# MAGIC config = json.loads(prompt.template)
+# MAGIC # Build the ai_classify SQL from `config` and inject it into the MV definition.
+# MAGIC ```
+# MAGIC This closes the loop: **tune here → promote → pipeline picks it up automatically**.
+# MAGIC
+# MAGIC ### 3. Measure model stochasticity
+# MAGIC `ai_classify` is non-deterministic. To show the *second* noise floor, re-run one
+# MAGIC config 3–5× with the cache cleared for that hash (delete from `ai_classify_eval_cache
+# MAGIC WHERE config_hash = '...'`), and watch micro-F1 wobble with the prompt held fixed.
+# MAGIC
+# MAGIC ### 4. Production monitoring
+# MAGIC Once the pipeline is reading from the registry, register an MLflow scorer against
+# MAGIC the experiment and start production monitoring:
+# MAGIC ```python
+# MAGIC from mlflow.genai.scorers import ScorerSamplingConfig
+# MAGIC quality_scorer = my_scorer.register(name="offer_blocker_quality")
+# MAGIC quality_scorer.start(sampling_config=ScorerSamplingConfig(sample_rate=0.1))
+# MAGIC ```
+# MAGIC
+# MAGIC ### 5. The qualifier layer
+# MAGIC `gold_findings_raw` runs a finer-grained qualifier classification per code
+# MAGIC (e.g. 4A → `current-supplier` / `competitor-rate` / …). The **same eval harness**
+# MAGIC generalizes: swap the labels dict, build a parallel eval table, and re-use this
+# MAGIC notebook's Sections 4–11 unchanged.

@@ -24,10 +24,10 @@ So a "model version" here **is** a `(descriptions + instructions + options)` bun
 and evaluation is just a function: `prompt_config → accuracy metrics`.
 
 Everything in the notebook follows from that:
-- One **MLflow run = one prompt config**, so you can compare variants side-by-side.
-- The expensive step (one LLM call per transcript) is a pure function of
-  `(transcript, config, model)` → it is **cached and deterministic**, which is how a
-  single notebook stays idempotent.
+- One **Prompt Registry version = one prompt config**, versioned in Unity Catalog.
+- One **MLflow run = one evaluation** of a prompt version, so you compare side-by-side.
+- The expensive step (one LLM call per transcript) is cached by `config_hash` — re-runs
+  are free and deterministic.
 
 ---
 
@@ -60,47 +60,49 @@ adjacent boundaries **4A ↔ 4B ↔ 4C** and **4C ↔ 4D**.
 - `expectations` → `{"expected_response": "[\"4B\",\"4C\"]"}` (a multilabel array;
   `[]` means **no blocker**)
 
-### ⚠️ Read this before you trust any number
-
-This eval set is **tiny and imbalanced**:
-
-| | value |
-|---|---|
-| total rows | **24** |
-| empty / no-blocker | **12 (50%)** |
-| 4A positives | **1** |
-| 4B / 4C / 4D positives | 4 each |
-| 4E / 4F positives | 3 each |
-
-That single fact reshapes the whole exercise:
-
-- This is **not** an optimization problem. It is a **structured, rationale-driven
-  error analysis** with a *thin quantitative guardrail*.
-- Metrics are a **regression smoke-test**, not a leaderboard. **One row flipping moves
-  micro-F1 by ~4 points** — that is noise, not progress.
-- **Code 4A (n=1) is a unit test, not a metric.** Its per-label F1 can only be 0.0 or
-  1.0; it measures nothing generalizable.
-- The honest **#1 priority is not a tuned prompt** — it is growing and curating the
-  labeled set (see below).
-
 ---
 
 ## How the notebook is structured
 
-| § | Section | Teaching point |
-|---|---------|----------------|
-| 0 | Setup, parameters & prompt config | Nothing hardcoded; the config is one hashed object |
-| 1 | Load ground truth & **look at it first** | Inspect class balance before measuring |
-| 2 | Build the `ai_classify` SQL from the config | Pipeline & eval can never drift apart |
-| 3 | Reproducibility cache | `config_hash`-keyed Delta table → real idempotency |
-| 4 | Deterministic scorers | Compare sets in Python; no LLM judge needed |
-| 5 | `mlflow.genai.evaluate()` run | `predict_fn` is a pure cache lookup (no LLM call) |
-| 6 | Corpus metrics + noise panel | Micro-F1 headline; macro-F1 flagged; integer TP/FP/FN |
-| 7 | **Error analysis** | Read rationales row-by-row; bucket mistakes — *the main event* |
-| 8 | Iteration decision guide | Which surface to edit for which error |
-| 9 | Confidence-threshold sweep | A free precision/recall knob |
-| 10 | Register the tuned prompt | Durable handoff artifact in the Prompt Registry |
-| 11 | Honest next steps | Why not GEPA; grow/curate the set; promotion path |
+| Phase | §§ | What happens |
+|-------|----|--------------|
+| **Setup** | 0–1 | Parameters, prompt config, **register in Prompt Registry** |
+| **Data** | 2–3 | Load managed eval dataset, inspect class balance, **3-way train/validation/test split** |
+| **Score** | 4–7 | Build SQL, cache predictions, `mlflow.genai.evaluate()`, corpus metrics |
+| **Diagnose** | 8–10 | Error analysis + substitution matrix, iteration guide + threshold sweep |
+| **Compare** | 11 | Programmatic side-by-side of all runs |
+| **Optimize** | 12 | (Optional, gated) GEPA automated prompt optimization |
+| **Ship** | 13–14 | Promote winning prompt, next steps |
+
+---
+
+## Key MLflow features used
+
+### Prompt Registry (Section 1 & 13)
+Each prompt variant is a **versioned artifact** in Unity Catalog, not a string in a
+code cell. The iteration loop is: edit → register new version → evaluate → compare →
+promote the winner with a `"production"` alias. Eventually, the production pipeline
+reads from this alias rather than hardcoded SQL.
+
+### `mlflow.genai.evaluate()` (Section 6)
+The standard GenAI evaluation API, with:
+- **`predict_fn`** that receives `**kwargs` (not a dict) — unpacked from `inputs`
+- **Custom `@scorer` functions** returning `Feedback` objects (per-label hits visible
+  in the Trace UI per-row)
+- **Corpus-wide metrics** (`micro_f1`, `macro_f1`, `mean_jaccard`, `abstain_accuracy`)
+  logged to the same run via `log_metrics`
+
+### Managed Datasets (Section 2)
+Loaded via `mlflow.genai.datasets.get_dataset()` (with a Spark fallback), the native
+MLflow way to work with UC-backed eval data.
+
+### GEPA / `optimize_prompts()` (Section 12)
+Automated prompt evolution — optimizes the **instructions** string (the semantic
+surface) while holding descriptions fixed (the structured routing rules). Gated behind
+a widget because it's slow and costly (one SQL call per row per GEPA iteration). Uses
+a **3-way split** (Section 3) — train for optimization, validation for selecting the
+best candidate, and a held-out **test split** for the final honest check — to prevent
+overfitting.
 
 ---
 
@@ -108,22 +110,23 @@ That single fact reshapes the whole exercise:
 
 | Metric | Role | Watch out |
 |--------|------|-----------|
-| **Micro-F1** | **Headline.** Pools all 24×6 = **144 label decisions** — the real sample size, and the steadiest number. | Still moves ~4 pts per row. |
+| **Micro-F1** | **Headline.** Pools all n×6 label decisions — the real sample size. | Moves ~`6/(n*6)`% per flipped row. |
 | **Mean Jaccard** | Human-intuitive partial credit per row (`∅,∅ → 1.0`). | — |
-| **Abstain accuracy** | On rows that should be empty, did we assign nothing? **Biggest lever (50% of data).** | — |
-| **Macro-F1** | Reported, but **excludes 4A** and averages tiny classes. | Whiplashes — treat as noisy. |
+| **Abstain accuracy** | On empty-ground-truth rows, did we assign nothing? **Biggest lever.** | — |
+| **Macro-F1** | Reported with a warning; excludes codes with ≤2 positives. | Whiplashes on small classes. |
 | **Per-label TP/FP/FN** | Integer counts ("3 of 4"), not bare rates. | "0.75" hides a denominator of 4. |
+| **Per-label Feedback** | Visible per-row in the MLflow Trace UI. | — |
 | **Exact-match** | Sanity stat only — brutal for multilabel. | Never the optimization target. |
 
-**Row-wise vs corpus-wide** is a core lesson: Jaccard/exact-match/abstain are per-row
-MLflow `@scorer`s; precision/recall/F1 need the whole set at once and are computed in a
-plain cell, then `log_metrics`'d into the same run.
+**Row-wise vs corpus-wide** is a core lesson: Jaccard/exact-match/abstain/per-label
+are `@scorer` functions (per-row in the UI); precision/recall/F1 need the whole set
+and are computed + `log_metrics`'d separately.
 
 ---
 
 ## The tuning loop — which surface do I edit?
 
-Match the **error signature** (from Section 7) to the **lever**, and change **one
+Match the **error signature** (from Section 8) to the **lever**, and change **one
 surface per iteration**:
 
 | Error signature | Lever |
@@ -138,64 +141,51 @@ Use confidence to pick the lever: **low-confidence** false positives → thresho
 threshold will save you.
 
 > **Golden rule:** keep an edit only if it fixes a **class** of error for an
-> articulable, generalizable reason — never because one row's number went up. At n=24,
-> one row moving is almost always noise.
+> articulable, generalizable reason — never because one row's number went up.
 
 ### To run an iteration
-1. Duplicate the config cell in **Section 0**.
-2. Edit **one** surface (one or two descriptions, *or* the instructions, *or* the
-   threshold widget).
-3. Set a new `run_label` (e.g. `v2_tighten_4B_vs_4A`).
-4. Re-run from Section 0. The cache re-scores **only** the new config; everything else
-   is instant.
-5. Compare runs in the **Experiments UI** — it reads like a changelog.
+1. Edit **one** surface in Section 1 (descriptions *or* instructions, not both).
+2. Set a new `run_label` (e.g. `v2_tighten_4B_vs_4A`).
+3. Re-run from Section 0. A new Prompt Registry version is created automatically;
+   the cache re-scores **only** the new config; everything else is instant.
+4. Compare runs in the **Experiments UI** or **Section 11** (programmatic table).
 
 ---
 
-## Why we do NOT run GEPA / `optimize_prompts` here
+## When to use GEPA vs manual tuning
 
-Automated prompt optimization is the right tool *later* and the wrong tool *now*:
+| | Manual tuning (Sections 8–10) | GEPA (Section 12) |
+|---|---|---|
+| **Best for** | Boundary errors (descriptions), under/over-assignment (instructions) | Plateau-breaking on instructions after manual gains stall |
+| **Dataset size** | Any (even small) | 200–400+ total rows; ≥30 per label per split |
+| **Splits** | Evaluates on **full** dataset (generalizable edits) | **3-way**: train (70%) / validation (15%) / test (15%) |
+| **Surface** | Either (descriptions or instructions) | Instructions only (GEPA would break contrastive descriptions) |
+| **Cost** | Free (edits cached predictions) | Expensive (1 SQL call × n_train × GEPA iterations) |
+| **Transparency** | You read rationales and understand every edit | GEPA outputs opaque evolved text |
 
-- **No honest validation split.** A held-out from 24 rows is ~5 rows, and **4A's one
-  example cannot be in both train and validation** — class-level signal is impossible.
-- **Its signal is the metric, and the metric is noise here.** It would memorize these
-  24 transcripts (learning the labels, not the task) with no instrument able to detect
-  the lost generalization.
-- **It removes the rationale-reading that is the actual value at this scale** and emits
-  opaque evolved text a newcomer can't reason about.
+### Why 3 splits, not 2?
 
-The notebook **shows the hook, commented out**, with guidance on when to pull it
-(hundreds of rows + a real held-out split).
+| Split | Purpose | Who sees it |
+|-------|---------|-------------|
+| **Train** (~70%) | What GEPA optimizes against | GEPA |
+| **Validation** (~15%) | Picks the winning prompt candidate | GEPA (for selection — "used up") |
+| **Test** (~15%) | Final honest check | **Nobody until final eval** |
 
----
-
-## Your real #1 priority: grow & curate the labeled set
-
-Your eval-set size sets the **ceiling** on how much you can trust *any* result —
-manual or automated.
-
-| Code | Now | Target (min usable) |
-|------|-----|---------------------|
-| empty / no-blocker | 12 | keep ~40–50% of total |
-| 4A | **1** | ~10 |
-| 4B–4D | 4 each | ~10–15 each |
-| 4E–4F | 3 each | ~10–15 each |
-| **total** | **24** | **~150–300** |
-
-Because it is a managed dataset, growth is cheap: **append rows, re-run this same
-notebook, same scorers.** Also **audit label quality** — at n=24 a mislabeled truth row
-is about as damaging as a model error, so double-label a subset and re-adjudicate every
-disagreement your rationales surface.
+The validation set is compromised by *selection*: repeatedly choosing the prompt that
+scores best on it can overfit to that set, even though GEPA didn't directly train on
+it. The test set is the only truly independent assessment. Think of it as "train is
+for learning, validation is for choosing, test is for believing."
 
 ---
 
 ## Prerequisites
 
-- **Compute:** serverless, or a Pro/Serverless-capable runtime (`ai_classify` is not
-  available on SQL Warehouse Classic).
+- **Compute:** serverless, or a Pro/Serverless-capable runtime (`ai_classify` requires
+  it).
 - **Access:** read on the eval table; create/write on
   `dbw_brlui_stable.call_transcripts_poc` for the cache + prompt-registry objects.
-- **Library:** `mlflow[databricks] >= 3.1` (installed by the notebook's first cell).
+- **Library:** `mlflow[databricks] >= 3.5` (installed by the notebook's first cell).
+  GEPA specifically requires `>= 3.5.0`.
 
 ## Parameters (widgets)
 
@@ -207,19 +197,26 @@ disagreement your rationales surface.
 | `experiment_path` | *(blank)* | MLflow experiment (blank = notebook default) |
 | `run_label` | `baseline_v1` | Human name for this prompt variant |
 | `confidence_threshold` | `0.0` | Keep labels with confidence ≥ this |
+| `run_gepa` | `false` | Run GEPA automated optimization? |
 
 ## Objects the notebook creates
 
-- `dbw_brlui_stable.call_transcripts_poc.ai_classify_eval_cache` — Delta cache of
-  predictions, keyed by `config_hash` (safe to re-run; never dropped).
-- `dbw_brlui_stable.call_transcripts_poc.offer_blocker_ai_classify_prompt` — registered
-  prompt (best-effort; skipped gracefully on older MLflow).
-- One MLflow run per `run_label`, with params, metrics, `prompt_config.json`,
+- **`ai_classify_eval_cache`** — Delta cache of predictions, keyed by `config_hash`.
+- **`offer_blocker_ai_classify_prompt`** — Prompt Registry entry; one version per
+  prompt variant, with `"production"` alias on the promoted winner.
+- **`offer_blocker_instructions`** — (GEPA only) Prompt Registry entry for the
+  instructions string, optimized by GEPA.
+- **One MLflow run per `run_label`**, with params, metrics, `prompt_config.json`,
   `per_label_metrics.json`, and the substitution-matrix figure.
 
 ## Promoting a tuned prompt back to the pipeline
 
-Copy the winning `LABELS` + `INSTRUCTIONS` from the Section-0 config back into
+**Today:** copy the winning `LABELS` + `INSTRUCTIONS` from Section 1 back into
 [`pipeline/transformations/gold/gold_opportunity_enrichment.sql`](../../pipeline/transformations/gold/gold_opportunity_enrichment.sql).
-Because the notebook builds its `ai_classify` SQL from the same two surfaces, what you
-evaluated is exactly what the pipeline will run.
+
+**Future:** the pipeline reads from the Prompt Registry's `@production` alias:
+```python
+prompt = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@production")
+config = json.loads(prompt.template)
+# Build ai_classify SQL from config
+```
