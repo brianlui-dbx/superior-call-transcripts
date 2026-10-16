@@ -27,7 +27,9 @@ All prompt content is sourced from the **master evaluation prompt**
 (`examples/Module 2 - Offer Blocker AI Prompt v6.docx`), which is the authoritative
 source of truth for code definitions, qualifiers, boundary rules, and calibration
 examples. The descriptions distill Section 6 per-code text to ≤1,000 chars each; the
-instructions include the full verbatim text of Sections 1, 3, 6, and 7 (~32K chars / ~8K tokens).
+instructions include verbatim Sections 1, 3, 6 **preamble** (shared assignment engine,
+dispositions, boundary litmus — NOT the per-code definitions, which live in descriptions),
+and 7 (~10K chars, within `ai_classify`'s 20K-char instruction limit).
 
 Everything in the notebook follows from that:
 - **Two registered prompts** in the Prompt Registry: `offer_blocker_descriptions`
