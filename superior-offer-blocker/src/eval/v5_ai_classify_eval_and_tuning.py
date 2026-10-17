@@ -815,7 +815,7 @@ _rat_pd = spark.sql(f"""
   SELECT opportunity_id, pred_codes, pred_confidences, pred_rationales
   FROM {CACHE_TABLE} WHERE config_hash = '{CONFIG_HASH}'
 """).toPandas()
-err = merged.merge(_rat_pd, on="opportunity_id", how="left", suffixes=("", "_cache"))
+err = merged.merge(_rat_pd, on="opportunity_id", how="left")
 
 
 def _bucket(row):
@@ -890,9 +890,10 @@ with mlflow.start_run(run_id=RUN_ID):
 
 # COMMAND ----------
 
-# Normalize columns before the sweep so lookup logic is clean.
-err["_raw_codes"] = err["pred_codes_cache"].where(err["pred_codes_cache"].notna(), err.get("pred_codes"))
-err["_raw_confs"] = err["pred_confidences_cache"].where(err["pred_confidences_cache"].notna(), err.get("pred_confidences"))
+# The merge in Section 8 brings pred_codes / pred_confidences from the cache table.
+# No suffix collision because `merged` only has `pred_set`, not `pred_codes`.
+err["_raw_codes"] = err["pred_codes"]
+err["_raw_confs"] = err["pred_confidences"]
 
 sweep_rows = []
 for tau in [0.0, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9]:
