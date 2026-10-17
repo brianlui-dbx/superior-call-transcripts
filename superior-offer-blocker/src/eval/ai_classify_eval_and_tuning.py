@@ -72,7 +72,7 @@ dbutils.widgets.dropdown(
 CATALOG = dbutils.widgets.get("catalog")
 SCHEMA = dbutils.widgets.get("schema")
 EVAL_TABLE = f"{CATALOG}.{SCHEMA}.{dbutils.widgets.get('eval_table')}"
-CACHE_TABLE = f"{CATALOG}.{SCHEMA}.ai_classify_eval_cache_v3"
+CACHE_TABLE = f"{CATALOG}.{SCHEMA}.ai_classify_eval_cache_v4"
 DESCRIPTIONS_PROMPT_NAME = f"{CATALOG}.{SCHEMA}.offer_blocker_descriptions"
 INSTRUCTIONS_PROMPT_NAME = f"{CATALOG}.{SCHEMA}.offer_blocker_instructions"
 BUNDLE_PROMPT_NAME = f"{CATALOG}.{SCHEMA}.offer_blocker_ai_classify_prompt"
@@ -452,7 +452,17 @@ except Exception as e:
 # MAGIC
 # MAGIC The eval table is an **MLflow managed evaluation dataset** — a Unity Catalog table
 # MAGIC with `inputs` and `expectations` JSON columns. We load it via the MLflow managed
-# MAGIC dataset API (with a Spark fallback), then parse the JSON into a clean shape.
+# MAGIC dataset API, which gives us two things for free:
+# MAGIC
+# MAGIC 1. **Rich provenance** — passing the dataset object directly to `evaluate()` logs
+# MAGIC    the UC table name, digest, and schema on the run. Anyone inspecting the run
+# MAGIC    can trace results back to the exact data source (visible in the Datasets tab).
+# MAGIC 2. **`merge_records()`** — grow the eval set incrementally without rebuilding the
+# MAGIC    table (see Section 14 for the pattern).
+# MAGIC
+# MAGIC A Spark fallback is included for environments where the managed dataset API is
+# MAGIC unavailable — in that case `evaluate()` receives a plain list and provenance is
+# MAGIC generic (source_type = "code" instead of the UC table name).
 # MAGIC
 # MAGIC **Best practice: inspect the data before you measure anything.** The class balance
 # MAGIC table sets your expectations for *every* number below.
@@ -465,12 +475,15 @@ from pyspark.sql import functions as F
 # --- Load the table (try managed-dataset API first, fall back to Spark) ---------------
 try:
     import mlflow.genai.datasets
-    _ds = mlflow.genai.datasets.get_dataset(EVAL_TABLE)
-    _raw_pd = _ds.to_df()
+    EVAL_DATASET = mlflow.genai.datasets.get_dataset(EVAL_TABLE)
+    _raw_pd = EVAL_DATASET.to_df()
     print(f"✓ Loaded via mlflow.genai.datasets.get_dataset (managed dataset API)")
+    print(f"  → Passing this object to evaluate() logs UC table provenance automatically.")
+    print(f"  → Use EVAL_DATASET.merge_records([...]) to grow the eval set.")
 except Exception:
+    EVAL_DATASET = None
     _raw_pd = spark.table(EVAL_TABLE).toPandas()
-    print(f"✓ Loaded via spark.table() (fallback)")
+    print(f"✓ Loaded via spark.table() (fallback — no managed dataset provenance)")
 
 # --- Parse JSON columns → clean Python types ------------------------------------------
 def _parse_row(row):
@@ -709,11 +722,19 @@ from mlflow.genai.scorers import scorer
 from mlflow.entities import Feedback
 
 def _as_set(x):
-    """Normalize a predicted/expected value to a set of code prefixes (e.g. '4B')."""
+    """Normalize a predicted/expected value to a set of code prefixes (e.g. '4B').
+
+    Handles every format you'll encounter:
+      - predict_fn output:     {"codes": ["4B", "4C"]}
+      - managed dataset row:   {"expected_response": '["4B","4C"]'}  (JSON string)
+      - parsed eval_data:      {"expected_codes": ["4B", "4C"]}
+      - raw list/string:       ["4B"] or '["4B"]'
+    """
     if x is None:
         return set()
     if isinstance(x, dict):
-        x = x.get("codes", [])
+        # Try each key in priority order; fall back to empty list.
+        x = x.get("codes") or x.get("expected_codes") or x.get("expected_response", [])
     if isinstance(x, str):
         x = json.loads(x) if x.startswith("[") else [x]
     return {str(c)[:2] for c in (x or [])}
@@ -722,7 +743,7 @@ def _as_set(x):
 @scorer
 def jaccard(outputs, expectations) -> Feedback:
     """Set overlap with partial credit. Empty-vs-empty is a perfect 1.0."""
-    pred, gold = _as_set(outputs), _as_set(expectations.get("expected_codes"))
+    pred, gold = _as_set(outputs), _as_set(expectations)
     if not pred and not gold:
         val = 1.0
     else:
@@ -733,7 +754,7 @@ def jaccard(outputs, expectations) -> Feedback:
 @scorer
 def exact_match(outputs, expectations) -> Feedback:
     """Entire code set right? Brutal for multilabel — a sanity stat only."""
-    pred, gold = _as_set(outputs), _as_set(expectations.get("expected_codes"))
+    pred, gold = _as_set(outputs), _as_set(expectations)
     return Feedback(value=(pred == gold), rationale=f"pred={sorted(pred)} gold={sorted(gold)}")
 
 
@@ -741,7 +762,7 @@ def exact_match(outputs, expectations) -> Feedback:
 def abstained_correctly(outputs, expectations) -> Feedback:
     """On rows that SHOULD be empty, did we assign nothing?
     Returns 'n/a' on rows that should have a code."""
-    pred, gold = _as_set(outputs), _as_set(expectations.get("expected_codes"))
+    pred, gold = _as_set(outputs), _as_set(expectations)
     if gold:
         return Feedback(value="n/a", rationale="row has a true code; not an abstain case")
     return Feedback(value=(len(pred) == 0), rationale=f"should abstain; predicted {sorted(pred)}")
@@ -751,7 +772,7 @@ def abstained_correctly(outputs, expectations) -> Feedback:
 def per_label_hits(outputs, expectations):
     """Per-label TP/FP/FN as individual Feedback objects. Shows per-row, per-code
     correctness in the MLflow Trace UI — much richer than a single aggregate."""
-    pred, gold = _as_set(outputs), _as_set(expectations.get("expected_codes"))
+    pred, gold = _as_set(outputs), _as_set(expectations)
     feedbacks = []
     for c in CODE_PREFIXES:
         in_pred, in_gold = c in pred, c in gold
@@ -783,7 +804,7 @@ def boundary_confusion(outputs, expectations) -> Feedback:
     Returns 1.0 if no boundary confusion, 0.0 if any boundary pair is crossed.
     A boundary error is: gold has code X, pred has code Y (or vice versa),
     where (X,Y) is a known confusable pair."""
-    pred, gold = _as_set(outputs), _as_set(expectations.get("expected_codes"))
+    pred, gold = _as_set(outputs), _as_set(expectations)
     missed = gold - pred  # codes we should have assigned but didn't
     added = pred - gold   # codes we assigned but shouldn't have
     boundary_errors = []
@@ -836,15 +857,25 @@ def predict_fn(opportunity_id, transcript_text):
     return {"codes": codes, "confidences": confidences, "rationales": rationales}
 
 
-# Build eval data in the shape MLflow expects: a list of {inputs, expectations} dicts.
-eval_data = [
-    {
-        "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
-        "expectations": {"expected_codes": list(r.expected_codes)},
-    }
-    for _, r in gt_pd.iterrows()
-]
-print(f"Prepared {len(eval_data)} evaluation records.")
+# Pass the managed dataset object directly to evaluate() when available — this logs
+# the UC table name + provenance automatically (visible in the run's Datasets tab as
+# source_type="delta_table" with a link to the exact UC table, instead of a generic
+# source_type="code"). Fall back to a plain list if the managed dataset wasn't loaded.
+if EVAL_DATASET is not None:
+    eval_data = EVAL_DATASET
+    print(f"Using managed dataset for evaluate() — UC table provenance will be logged.")
+    print(f"  Source table: {EVAL_TABLE}")
+else:
+    eval_data = [
+        {
+            "inputs": {"opportunity_id": r.opportunity_id, "transcript_text": r.transcript_text},
+            "expectations": {"expected_codes": list(r.expected_codes)},
+        }
+        for _, r in gt_pd.iterrows()
+    ]
+    print(f"Prepared {len(eval_data)} evaluation records (plain list — no UC provenance).")
+print(f"\nℹ️  Scorers use _as_set() which handles both managed-dataset format")
+print(f"   (expected_response) and parsed format (expected_codes) transparently.")
 
 # COMMAND ----------
 
@@ -1246,7 +1277,7 @@ if RUN_GEPA:
     @scorer
     def gepa_micro_f1(outputs, expectations) -> Feedback:
         pred = _as_set(outputs)
-        gold = _as_set(expectations.get("expected_codes"))
+        gold = _as_set(expectations)
         tp = len(pred & gold)
         fp = len(pred - gold)
         fn = len(gold - pred)
@@ -1458,7 +1489,7 @@ if RUN_GEPA and GEPA_PHASE in ("descriptions", "joint"):
                     train_data=train_data_gepa,
                     prompt_uris=[_desc_for_gepa.uri],
                     optimizer=GepaPromptOptimizer(
-                        reflection_model="databricks:/databricks-claude-sonnet-5",
+                        reflection_model="databricks:/databricks-gpt-oss-20b",
                         max_metric_calls=50,
                         display_progress_bar=True,
                     ),
@@ -1549,7 +1580,7 @@ if RUN_GEPA and GEPA_PHASE in ("instructions", "joint"):
                     train_data=train_data_gepa,
                     prompt_uris=[_instr_for_gepa.uri],
                     optimizer=GepaPromptOptimizer(
-                        reflection_model="databricks:/databricks-claude-sonnet-5",
+                        reflection_model="databricks:/databricks-gpt-oss-20b",
                         max_metric_calls=50,
                         display_progress_bar=True,
                     ),
@@ -1632,7 +1663,7 @@ if RUN_GEPA and GEPA_PHASE == "joint":
                 train_data=train_data_gepa,
                 prompt_uris=[_desc_for_joint.uri, _instr_for_joint.uri],
                 optimizer=GepaPromptOptimizer(
-                    reflection_model="databricks:/databricks-claude-sonnet-5",
+                    reflection_model="databricks:/databricks-gpt-oss-20b",
                     max_metric_calls=80,  # more budget for joint search
                     display_progress_bar=True,
                 ),

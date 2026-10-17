@@ -109,9 +109,12 @@ The standard GenAI evaluation API, with:
 - **Corpus-wide metrics** (`micro_f1`, `macro_f1`, `mean_jaccard`, `abstain_accuracy`,
   `boundary_confusion_rate`) logged to the same run via `log_metrics`
 
-### Managed Datasets (Section 2)
-Loaded via `mlflow.genai.datasets.get_dataset()` (with a Spark fallback), the native
-MLflow way to work with UC-backed eval data.
+### Managed Datasets (Section 2 & 6)
+Loaded via `mlflow.genai.datasets.get_dataset()` and **passed directly** to
+`evaluate()` — this logs UC table provenance automatically on every run (the
+Datasets tab shows the exact table name, digest, and schema, not just "code").
+The dataset object also supports `merge_records()` for growing the eval set.
+A Spark fallback is included for environments where the API is unavailable.
 
 ### GEPA / `optimize_prompts()` (Section 12)
 Automated prompt evolution with **phase-gated** optimization:
@@ -217,7 +220,7 @@ set a new `run_label`, and re-evaluate on the full dataset to confirm before pro
 
 ## Objects the notebook creates
 
-- **`ai_classify_eval_cache_v3`** — Delta cache of predictions, keyed by `config_hash`.
+- **`ai_classify_eval_cache_v4`** — Delta cache of predictions, keyed by `config_hash`.
 - **`offer_blocker_descriptions`** — Prompt Registry entry for the descriptions JSON.
 - **`offer_blocker_instructions`** — Prompt Registry entry for the instructions string.
 - **`offer_blocker_ai_classify_prompt`** — Prompt Registry entry for the full config
