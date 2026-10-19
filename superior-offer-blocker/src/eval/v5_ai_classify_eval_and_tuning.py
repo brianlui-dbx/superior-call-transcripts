@@ -945,10 +945,16 @@ else:
 # MAGIC | `descriptions` | 6 label descriptions (JSON) | Instructions | GEPA must preserve valid JSON with exact keys ≤1000 chars each |
 # MAGIC | `joint` | Both | Nothing | Largest search space; run after individual phases plateau |
 # MAGIC
-# MAGIC **Budget**: `max_metric_calls=300` gives GEPA ~20 full-dataset evaluations
-# MAGIC to explore.  The diagnostic counter `_gepa_call_log` prints after optimization
-# MAGIC to reveal whether mutations are failing validation (JSON parse, key mismatch,
-# MAGIC length overflow) vs. simply scoring worse than the seed.
+# MAGIC **Budget**: `max_metric_calls=1000` with `reflection_minibatch_size=5` gives GEPA
+# MAGIC enough room for ~40 mutation cycles with full validations.
+# MAGIC
+# MAGIC **Key fixes in this version:**
+# MAGIC - `@mlflow.trace` on all predict_fns → reflection model sees effective prompt text
+# MAGIC - `CONFIDENCE_THRESHOLD` applied consistently (was missing in GEPA predict_fn)
+# MAGIC - `validation_data` passed to GEPA as `valset` (was built but unused)
+# MAGIC - Empty-set F1 = 1.0 for correct abstentions (was 0.0, depressing scores)
+# MAGIC - SQL errors raise instead of silent zero scores
+# MAGIC - `skip_perfect_score=False` prevents skipping iterations
 # MAGIC
 # MAGIC All phases share the same orchestration function below — the only difference is
 # MAGIC which prompt URI(s) are passed to `optimize_prompts()`.
@@ -962,12 +968,24 @@ if not RUN_GEPA:
 
 if RUN_GEPA:
     from mlflow.genai.optimize import GepaPromptOptimizer
+    from importlib.metadata import version as pkg_version
     import hashlib
+
+    # --- Version diagnostics ----------------------------------------------------------
+    print(f"mlflow version: {pkg_version('mlflow')}")
+    try:
+        print(f"gepa version:   {pkg_version('gepa')}")
+    except Exception:
+        print("gepa version:   (not installed locally — will be on cluster)")
 
     # --- Row-level GEPA scorer --------------------------------------------------------
     # NOTE: GEPA averages this per-row score — that is example-averaged F1, which
     # approximates but is NOT identical to corpus micro-F1.
     # Rich rationales help the reflection model understand what went wrong.
+    #
+    # FIX: When both predicted and expected sets are empty (correct abstention),
+    # score 1.0 instead of 0.0.  This is important because ~12% of examples have
+    # no applicable codes; penalizing correct abstentions tanks the average score.
     @scorer
     def gepa_row_f1(outputs, expectations) -> Feedback:
         # If the predict_fn returned an error, score 0 with the error as rationale.
@@ -976,6 +994,11 @@ if RUN_GEPA:
 
         pred = normalize_to_code_set(outputs)
         gold = normalize_to_code_set(expectations)
+
+        # Correct abstention: both empty → perfect score
+        if not pred and not gold:
+            return Feedback(value=1.0, rationale="CORRECT ABSTENTION (both empty)")
+
         tp, fp, fn = len(pred & gold), len(pred - gold), len(gold - pred)
         _, _, f1 = precision_recall_f1(tp, fp, fn)
 
@@ -1063,6 +1086,18 @@ if RUN_GEPA:
             return None, f"Instructions exceed limit: {len(text)} > 20000 chars"
         return text, None
 
+    # --- GEPA predict functions ---------------------------------------------------------
+    # Each predict_fn is decorated with @mlflow.trace so GEPA's reflection model
+    # can see the effective prompt text (instructions, labels) and the full
+    # ai_classify response in the MLflow span inputs/outputs.
+    #
+    # FIX 1: Apply CONFIDENCE_THRESHOLD consistently (baseline uses it, GEPA must too).
+    # FIX 2: Preserve confidence scores and rationales in the output for richer traces.
+    # FIX 3: Let SQL errors raise (not silently score 0) — infrastructure failures
+    #         should not look like bad prompts to GEPA's reflection model.
+    # FIX 4: Clean up temp views in finally blocks.
+
+    @mlflow.trace
     def _descriptions_predict_fn(opportunity_id, transcript_text):
         """GEPA predict_fn for descriptions phase: loads GEPA-mutated descriptions."""
         _gepa_call_log["total"] += 1
@@ -1073,6 +1108,7 @@ if RUN_GEPA:
         config = {"labels": labels, "instructions": INSTRUCTIONS, "options": AI_OPTIONS}
         return _gepa_classify_single(config, opportunity_id, transcript_text)
 
+    @mlflow.trace
     def _instructions_predict_fn(opportunity_id, transcript_text):
         """GEPA predict_fn for instructions phase: loads GEPA-mutated instructions."""
         _gepa_call_log["total"] += 1
@@ -1083,6 +1119,7 @@ if RUN_GEPA:
         config = {"labels": LABELS, "instructions": instructions, "options": AI_OPTIONS}
         return _gepa_classify_single(config, opportunity_id, transcript_text)
 
+    @mlflow.trace
     def _joint_predict_fn(opportunity_id, transcript_text):
         """GEPA predict_fn for joint phase: loads both GEPA-mutated prompts."""
         _gepa_call_log["total"] += 1
@@ -1097,23 +1134,59 @@ if RUN_GEPA:
         config = {"labels": labels, "instructions": instructions, "options": AI_OPTIONS}
         return _gepa_classify_single(config, opportunity_id, transcript_text)
 
+    @mlflow.trace
     def _gepa_classify_single(config, opportunity_id, transcript_text):
-        """Shared: run ai_classify for one row and return normalized codes."""
+        """Shared: run ai_classify for one row and return normalized codes.
+
+        Returns a dict with:
+          - codes: list of 2-char code prefixes (after threshold filtering)
+          - predictions: full ai_classify response (values, scores, rationales)
+          - config_hash: hash of the effective config (for mutation verification)
+          - instructions_len: length of the effective instructions
+        """
+        view = f"_gepa_{uuid.uuid4().hex}"
         try:
             expr = build_ai_classify_expr("transcript_text", config)
-            view = f"_gepa_{uuid.uuid4().hex[:8]}"
             spark.createDataFrame([(transcript_text,)], ["transcript_text"]).createOrReplaceTempView(view)
+
+            # Extract full response: values, confidence scores, AND rationales
             result = spark.sql(f"""
-                SELECT transform(
-                    ({expr}):response::ARRAY<STRUCT<value:STRING,confidence_score:DOUBLE,rationale:STRING>>,
-                    x -> x.value
-                ) AS pred_codes FROM {view}
+                SELECT
+                    ({expr}):response::ARRAY<
+                        STRUCT<value:STRING, confidence_score:DOUBLE, rationale:STRING>
+                    > AS predictions
+                FROM {view}
             """).collect()[0]
+
+            if result.predictions is None:
+                raise RuntimeError("ai_classify returned a null response")
+
+            predictions = [p.asDict(recursive=True) for p in result.predictions]
+
+            # Apply the same CONFIDENCE_THRESHOLD as baseline evaluation
+            selected = [
+                p for p in predictions
+                if (p["confidence_score"] is None
+                    or p["confidence_score"] >= CONFIDENCE_THRESHOLD)
+            ]
+
             _gepa_call_log["ok"] += 1
-            return {"codes": [c[:2] for c in (result.pred_codes or [])]}
+            return {
+                "codes": sorted({p["value"][:2] for p in selected}),
+                "predictions": predictions,
+                "config_hash": config_to_hash(config),
+                "instructions_len": len(config.get("instructions", "")),
+            }
         except Exception as e:
             _gepa_call_log["sql_error"] += 1
-            return {"codes": [], "error": f"SQL error: {e}"}
+            # Re-raise so GEPA sees the real error instead of a silent zero score.
+            # GEPA's adapter already handles exceptions from predict_fn.
+            raise
+        finally:
+            try:
+                spark.catalog.dropTempView(view)
+            except Exception:
+                pass
 
 # COMMAND ----------
 
@@ -1140,20 +1213,34 @@ if RUN_GEPA:
     print(f"  Frozen: {'nothing' if GEPA_PHASE == 'joint' else 'descriptions' if GEPA_PHASE == 'instructions' else 'instructions'}")
 
     try:
-        # Budget: 50 metric calls was far too small. With n=14 rows, the seed
-        # evaluation alone consumes ~14 calls, leaving almost nothing for
-        # candidate exploration.  300 calls ≈ ~20 full-dataset evaluations,
-        # giving GEPA meaningful room to search.
-        # reflection_minibatch_size=3 reduces per-iteration cost so the
-        # optimizer can attempt more mutations within the budget.
+        # --- GEPA optimizer configuration -----------------------------------------------
+        # Budget: With n=14 train rows and minibatch_size=5, each iteration costs
+        # ~10 calls (parent minibatch + child minibatch) plus 14 for each full
+        # validation. 1000 calls gives room for ~40 mutations with full validations.
+        #
+        # Key fixes vs v5:
+        #   1. reflection_minibatch_size=5 — balances cost vs signal (default was 3,
+        #      which was too small and noisy for multilabel F1).
+        #   2. valset=validation_data — provides a held-out validation set for GEPA's
+        #      full-evaluation candidates (was unused before).
+        #   3. skip_perfect_score=False — don't skip iterations where the parent scores
+        #      perfectly on the minibatch (can happen with small batches).
+        #   4. seed=42 — reproducibility.
+        #   5. max_metric_calls=1000 — enough budget for real exploration.
         gepa_result = mlflow.genai.optimize_prompts(
             predict_fn=pc["predict_fn"],
             train_data=train_data,
             prompt_uris=pc["uris"],
             optimizer=GepaPromptOptimizer(
                 reflection_model="databricks:/databricks-claude-sonnet-5",
-                max_metric_calls=300,
+                max_metric_calls=1000,
                 display_progress_bar=True,
+                gepa_kwargs={
+                    "reflection_minibatch_size": 5,
+                    "valset": validation_data,
+                    "skip_perfect_score": False,
+                    "seed": 42,
+                },
             ),
             scorers=[gepa_row_f1],
         )
