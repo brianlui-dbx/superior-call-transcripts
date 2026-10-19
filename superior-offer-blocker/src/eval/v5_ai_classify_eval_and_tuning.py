@@ -939,11 +939,16 @@ else:
 # MAGIC GEPA evolves prompt text via a genetic-Pareto optimizer. The `gepa_phase` widget
 # MAGIC controls which surface(s) are optimized:
 # MAGIC
-# MAGIC | Phase | Optimizes | Frozen |
-# MAGIC |-------|-----------|--------|
-# MAGIC | `descriptions` | 6 label descriptions (JSON) | Instructions |
-# MAGIC | `instructions` | Instructions string | Descriptions |
-# MAGIC | `joint` | Both | Nothing |
+# MAGIC | Phase | Optimizes | Frozen | Notes |
+# MAGIC |-------|-----------|--------|-------|
+# MAGIC | `instructions` | Instructions string | Descriptions | **Recommended first** — natural language, no structural constraints |
+# MAGIC | `descriptions` | 6 label descriptions (JSON) | Instructions | GEPA must preserve valid JSON with exact keys ≤1000 chars each |
+# MAGIC | `joint` | Both | Nothing | Largest search space; run after individual phases plateau |
+# MAGIC
+# MAGIC **Budget**: `max_metric_calls=300` gives GEPA ~20 full-dataset evaluations
+# MAGIC to explore.  The diagnostic counter `_gepa_call_log` prints after optimization
+# MAGIC to reveal whether mutations are failing validation (JSON parse, key mismatch,
+# MAGIC length overflow) vs. simply scoring worse than the seed.
 # MAGIC
 # MAGIC All phases share the same orchestration function below — the only difference is
 # MAGIC which prompt URI(s) are passed to `optimize_prompts()`.
@@ -957,17 +962,34 @@ if not RUN_GEPA:
 
 if RUN_GEPA:
     from mlflow.genai.optimize import GepaPromptOptimizer
+    import hashlib
 
     # --- Row-level GEPA scorer --------------------------------------------------------
     # NOTE: GEPA averages this per-row score — that is example-averaged F1, which
-    # approximates but is NOT identical to corpus micro-F1. Named accordingly.
+    # approximates but is NOT identical to corpus micro-F1.
+    # Rich rationales help the reflection model understand what went wrong.
     @scorer
     def gepa_row_f1(outputs, expectations) -> Feedback:
+        # If the predict_fn returned an error, score 0 with the error as rationale.
+        if isinstance(outputs, dict) and outputs.get("error"):
+            return Feedback(value=0.0, rationale=f"PREDICT ERROR: {outputs['error']}")
+
         pred = normalize_to_code_set(outputs)
         gold = normalize_to_code_set(expectations)
         tp, fp, fn = len(pred & gold), len(pred - gold), len(gold - pred)
         _, _, f1 = precision_recall_f1(tp, fp, fn)
-        return Feedback(value=f1, rationale=f"row-F1={f1:.2f}")
+
+        # Build a diagnostic rationale the reflection model can learn from
+        parts = [f"F1={f1:.2f}"]
+        if pred == gold:
+            parts.append("EXACT MATCH")
+        else:
+            if pred - gold:
+                parts.append(f"FALSE POS: {sorted(pred - gold)}")
+            if gold - pred:
+                parts.append(f"FALSE NEG: {sorted(gold - pred)}")
+        parts.append(f"expected={sorted(gold)} predicted={sorted(pred)}")
+        return Feedback(value=f1, rationale=" | ".join(parts))
 
     # --- Build train / validation / test data for GEPA --------------------------------
     def _split_to_gepa_data(df):
@@ -986,51 +1008,112 @@ if RUN_GEPA:
 # COMMAND ----------
 
 if RUN_GEPA:
+    # Keep a reference copy of the original label keys for validation
+    _EXPECTED_LABEL_KEYS = set(LABELS.keys())
+
+    # --- Diagnostic counter for GEPA mutations ----------------------------------------
+    _gepa_call_log = {"total": 0, "desc_parse_fail": 0, "desc_key_mismatch": 0,
+                      "desc_too_long": 0, "instr_too_long": 0, "sql_error": 0, "ok": 0}
+
+    def _validate_descriptions(raw_template):
+        """Parse and validate a GEPA-mutated descriptions template.
+        Returns (labels_dict, None) on success or (None, error_string) on failure."""
+        # Strip common LLM artifacts (markdown code fences)
+        text = raw_template.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1]  # remove opening fence line
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0]
+        text = text.strip()
+
+        try:
+            labels = json.loads(text)
+        except json.JSONDecodeError as e:
+            _gepa_call_log["desc_parse_fail"] += 1
+            return None, f"JSON parse error: {e}"
+
+        if not isinstance(labels, dict) or len(labels) != 6:
+            _gepa_call_log["desc_parse_fail"] += 1
+            return None, f"Expected dict with 6 keys, got {type(labels).__name__} with {len(labels) if isinstance(labels, dict) else '?'} entries"
+
+        # Validate keys match exactly (GEPA may rename them)
+        if set(labels.keys()) != _EXPECTED_LABEL_KEYS:
+            _gepa_call_log["desc_key_mismatch"] += 1
+            missing = _EXPECTED_LABEL_KEYS - set(labels.keys())
+            extra = set(labels.keys()) - _EXPECTED_LABEL_KEYS
+            return None, f"Key mismatch — missing: {missing}, unexpected: {extra}"
+
+        # Validate per-label length
+        for k, v in labels.items():
+            if not isinstance(v, str) or len(v) == 0:
+                return None, f"Label '{k}' must be a non-empty string"
+            if len(v) > 1000:
+                _gepa_call_log["desc_too_long"] += 1
+                return None, f"Label '{k}' has {len(v)} chars (max 1000)"
+
+        return labels, None
+
+    def _validate_instructions(text):
+        """Validate a GEPA-mutated instructions string.
+        Returns (instructions, None) on success or (None, error_string) on failure."""
+        if not isinstance(text, str) or not text.strip():
+            return None, "Instructions must be non-empty text"
+        if len(text) > 20_000:
+            _gepa_call_log["instr_too_long"] += 1
+            return None, f"Instructions exceed limit: {len(text)} > 20000 chars"
+        return text, None
+
     def _descriptions_predict_fn(opportunity_id, transcript_text):
         """GEPA predict_fn for descriptions phase: loads GEPA-mutated descriptions."""
+        _gepa_call_log["total"] += 1
         prompt = mlflow.genai.load_prompt(PROMPT_VERSIONS["descriptions"].uri)
-        try:
-            labels = json.loads(prompt.template)
-            assert isinstance(labels, dict) and len(labels) == 6
-            for v in labels.values():
-                assert isinstance(v, str) and 0 < len(v) <= 1000
-        except Exception as e:
-            return {"codes": [], "error": f"invalid descriptions: {e}"}
+        labels, err = _validate_descriptions(prompt.template)
+        if err:
+            return {"codes": [], "error": err}
         config = {"labels": labels, "instructions": INSTRUCTIONS, "options": AI_OPTIONS}
         return _gepa_classify_single(config, opportunity_id, transcript_text)
 
     def _instructions_predict_fn(opportunity_id, transcript_text):
         """GEPA predict_fn for instructions phase: loads GEPA-mutated instructions."""
+        _gepa_call_log["total"] += 1
         prompt = mlflow.genai.load_prompt(PROMPT_VERSIONS["instructions"].uri)
-        config = {"labels": LABELS, "instructions": prompt.template, "options": AI_OPTIONS}
+        instructions, err = _validate_instructions(prompt.template)
+        if err:
+            return {"codes": [], "error": err}
+        config = {"labels": LABELS, "instructions": instructions, "options": AI_OPTIONS}
         return _gepa_classify_single(config, opportunity_id, transcript_text)
 
     def _joint_predict_fn(opportunity_id, transcript_text):
         """GEPA predict_fn for joint phase: loads both GEPA-mutated prompts."""
+        _gepa_call_log["total"] += 1
         desc_prompt = mlflow.genai.load_prompt(PROMPT_VERSIONS["descriptions"].uri)
         instr_prompt = mlflow.genai.load_prompt(PROMPT_VERSIONS["instructions"].uri)
-        try:
-            labels = json.loads(desc_prompt.template)
-            assert isinstance(labels, dict) and len(labels) == 6
-            for v in labels.values():
-                assert isinstance(v, str) and 0 < len(v) <= 1000
-        except Exception as e:
-            return {"codes": [], "error": f"invalid descriptions: {e}"}
-        config = {"labels": labels, "instructions": instr_prompt.template, "options": AI_OPTIONS}
+        labels, err = _validate_descriptions(desc_prompt.template)
+        if err:
+            return {"codes": [], "error": err}
+        instructions, err2 = _validate_instructions(instr_prompt.template)
+        if err2:
+            return {"codes": [], "error": err2}
+        config = {"labels": labels, "instructions": instructions, "options": AI_OPTIONS}
         return _gepa_classify_single(config, opportunity_id, transcript_text)
 
     def _gepa_classify_single(config, opportunity_id, transcript_text):
         """Shared: run ai_classify for one row and return normalized codes."""
-        expr = build_ai_classify_expr("transcript_text", config)
-        view = f"_gepa_{uuid.uuid4().hex[:8]}"
-        spark.createDataFrame([(transcript_text,)], ["transcript_text"]).createOrReplaceTempView(view)
-        result = spark.sql(f"""
-            SELECT transform(
-                ({expr}):response::ARRAY<STRUCT<value:STRING,confidence_score:DOUBLE,rationale:STRING>>,
-                x -> x.value
-            ) AS pred_codes FROM {view}
-        """).collect()[0]
-        return {"codes": [c[:2] for c in (result.pred_codes or [])]}
+        try:
+            expr = build_ai_classify_expr("transcript_text", config)
+            view = f"_gepa_{uuid.uuid4().hex[:8]}"
+            spark.createDataFrame([(transcript_text,)], ["transcript_text"]).createOrReplaceTempView(view)
+            result = spark.sql(f"""
+                SELECT transform(
+                    ({expr}):response::ARRAY<STRUCT<value:STRING,confidence_score:DOUBLE,rationale:STRING>>,
+                    x -> x.value
+                ) AS pred_codes FROM {view}
+            """).collect()[0]
+            _gepa_call_log["ok"] += 1
+            return {"codes": [c[:2] for c in (result.pred_codes or [])]}
+        except Exception as e:
+            _gepa_call_log["sql_error"] += 1
+            return {"codes": [], "error": f"SQL error: {e}"}
 
 # COMMAND ----------
 
@@ -1057,17 +1140,28 @@ if RUN_GEPA:
     print(f"  Frozen: {'nothing' if GEPA_PHASE == 'joint' else 'descriptions' if GEPA_PHASE == 'instructions' else 'instructions'}")
 
     try:
+        # Budget: 50 metric calls was far too small. With n=14 rows, the seed
+        # evaluation alone consumes ~14 calls, leaving almost nothing for
+        # candidate exploration.  300 calls ≈ ~20 full-dataset evaluations,
+        # giving GEPA meaningful room to search.
+        # reflection_minibatch_size=3 reduces per-iteration cost so the
+        # optimizer can attempt more mutations within the budget.
         gepa_result = mlflow.genai.optimize_prompts(
             predict_fn=pc["predict_fn"],
             train_data=train_data,
             prompt_uris=pc["uris"],
             optimizer=GepaPromptOptimizer(
                 reflection_model="databricks:/databricks-claude-sonnet-5",
-                max_metric_calls=50,
+                max_metric_calls=300,
                 display_progress_bar=True,
             ),
             scorers=[gepa_row_f1],
         )
+
+        # --- Diagnostic summary of GEPA predict calls --------------------------------
+        print(f"\n--- GEPA predict-fn diagnostics ---")
+        for k, v in sorted(_gepa_call_log.items()):
+            print(f"  {k}: {v}")
 
         print(f"\nInitial score: {gepa_result.initial_eval_score}")
         print(f"Final score:   {gepa_result.final_eval_score}")
