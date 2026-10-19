@@ -1062,7 +1062,7 @@ if RUN_GEPA:
             train_data=train_data,
             prompt_uris=pc["uris"],
             optimizer=GepaPromptOptimizer(
-                reflection_model="databricks:/databricks-claude-sonnet-5",
+                reflection_model="databricks:/databricks-gpt-oss-20b",
                 max_metric_calls=50,
                 display_progress_bar=True,
             ),
