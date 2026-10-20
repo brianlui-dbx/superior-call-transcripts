@@ -62,11 +62,12 @@ dbutils.widgets.dropdown(
 
 # COMMAND ----------
 
-import json, hashlib, uuid
+import json, hashlib, uuid, threading
 import numpy as np
 import uuid
 import pandas as pd
 import matplotlib.pyplot as plt
+import requests as _requests
 import mlflow
 from mlflow.genai.scorers import scorer
 from mlflow.entities import Feedback
@@ -999,8 +1000,8 @@ if RUN_GEPA:
     _EXPECTED_LABEL_KEYS = set(LABELS.keys())
 
     # --- Diagnostic counter for GEPA mutations ----------------------------------------
-    _gepa_call_log = {"total": 0, "desc_parse_fail": 0, "desc_key_mismatch": 0,
-                      "desc_too_long": 0, "instr_too_long": 0, "sql_error": 0, "ok": 0}
+    _gepa_call_log = {"total": 0, "cache_hit": 0, "desc_parse_fail": 0, "desc_key_mismatch": 0,
+                      "desc_too_long": 0, "instr_too_long": 0, "rest_error": 0, "ok": 0}
 
     def _validate_descriptions(raw_template):
         """Parse and validate a GEPA-mutated descriptions template.
@@ -1050,16 +1051,30 @@ if RUN_GEPA:
             return None, f"Instructions exceed limit: {len(text)} > 20000 chars"
         return text, None
 
+    # --- REST API client for ai_classify (eliminates Spark overhead per row) -----------
+    # The REST endpoint is functionally equivalent to the SQL ai_classify() function
+    # but avoids the per-call cost of view creation → SQL parse → Spark job → collect.
+    # An in-memory cache keyed by (config_hash, opportunity_id) ensures zero redundant
+    # inference: GEPA's re-evaluations and validation passes are served from cache.
+    _ws_url = f"https://{spark.conf.get('spark.databricks.workspaceUrl')}"
+    _api_token = (
+        dbutils.notebook.entry_point.getDbutils().notebook()
+        .getContext().apiToken().get()
+    )
+    _rest_session = _requests.Session()
+    _rest_session.headers.update({
+        "Authorization": f"Bearer {_api_token}",
+        "Content-Type": "application/json",
+    })
+    _CLASSIFY_URL = f"{_ws_url}/api/2.0/ai-functions/ai-classify"
+    _rest_cache = {}            # (config_hash, opportunity_id) → result dict
+    _rest_cache_lock = threading.Lock()
+    print(f"✓ REST client ready → {_CLASSIFY_URL}")
+
     # --- GEPA predict functions ---------------------------------------------------------
     # Each predict_fn is decorated with @mlflow.trace so GEPA's reflection model
     # can see the effective prompt text (instructions, labels) and the full
     # ai_classify response in the MLflow span inputs/outputs.
-    #
-    # FIX 1: Apply CONFIDENCE_THRESHOLD consistently (baseline uses it, GEPA must too).
-    # FIX 2: Preserve confidence scores and rationales in the output for richer traces.
-    # FIX 3: Let SQL errors raise (not silently score 0) — infrastructure failures
-    #         should not look like bad prompts to GEPA's reflection model.
-    # FIX 4: Clean up temp views in finally blocks.
 
     @mlflow.trace
     def _descriptions_predict_fn(opportunity_id, transcript_text):
@@ -1100,57 +1115,74 @@ if RUN_GEPA:
 
     @mlflow.trace
     def _gepa_classify_single(config, opportunity_id, transcript_text):
-        """Shared: run ai_classify for one row and return normalized codes.
+        """Classify one transcript via the REST AI Functions API with in-memory caching.
 
         Returns a dict with:
           - codes: list of 2-char code prefixes (after threshold filtering)
           - predictions: full ai_classify response (values, scores, rationales)
           - config_hash: hash of the effective config (for mutation verification)
           - instructions_len: length of the effective instructions
+
+        Cache key: (config_hash, opportunity_id). Cache hits are free — no inference,
+        no network call. This is the key cost optimization: GEPA's re-evaluations
+        and validation passes reuse prior results.
         """
-        view = f"_gepa_{uuid.uuid4().hex}"
+        chash = config_to_hash(config)
+        cache_key = (chash, opportunity_id)
+
+        # --- Cache lookup (thread-safe) ---
+        with _rest_cache_lock:
+            if cache_key in _rest_cache:
+                _gepa_call_log["cache_hit"] = _gepa_call_log.get("cache_hit", 0) + 1
+                return _rest_cache[cache_key]
+
+        # --- REST API call ---
         try:
-            expr = build_ai_classify_expr("transcript_text", config)
-            spark.createDataFrame([(transcript_text,)], ["transcript_text"]).createOrReplaceTempView(view)
+            payload = {
+                "content": transcript_text,
+                "labels": config["labels"],
+                "options": {
+                    "version": config["options"].get("version", "2.1"),
+                    "multilabel": config["options"].get("multilabel", "true") == "true",
+                    "enable_confidence_scores": config["options"].get("enableConfidenceScores", "true") == "true",
+                    "enable_rationales": config["options"].get("enableRationales", "true") == "true",
+                    "instructions": config["instructions"],
+                },
+            }
+            resp = _rest_session.post(_CLASSIFY_URL, json=payload, timeout=120)
+            resp.raise_for_status()
+            data = resp.json()
 
-            # Extract full response: values, confidence scores, AND rationales
-            result = spark.sql(f"""
-                SELECT
-                    ({expr}):response::ARRAY<
-                        STRUCT<value:STRING, confidence_score:DOUBLE, rationale:STRING>
-                    > AS predictions
-                FROM {view}
-            """).collect()[0]
+            if data.get("response") is None:
+                raise RuntimeError("ai_classify REST API returned a null response")
 
-            if result.predictions is None:
-                raise RuntimeError("ai_classify returned a null response")
-
-            predictions = [p.asDict(recursive=True) for p in result.predictions]
+            predictions = data["response"]
 
             # Apply the same CONFIDENCE_THRESHOLD as baseline evaluation
             selected = [
                 p for p in predictions
-                if (p["confidence_score"] is None
+                if (p.get("confidence_score") is None
                     or p["confidence_score"] >= CONFIDENCE_THRESHOLD)
             ]
 
-            _gepa_call_log["ok"] += 1
-            return {
+            result = {
                 "codes": sorted({p["value"][:2] for p in selected}),
                 "predictions": predictions,
-                "config_hash": config_to_hash(config),
+                "config_hash": chash,
                 "instructions_len": len(config.get("instructions", "")),
             }
-        except Exception as e:
-            _gepa_call_log["sql_error"] += 1
+
+            # Populate cache
+            with _rest_cache_lock:
+                _rest_cache[cache_key] = result
+
+            _gepa_call_log["ok"] += 1
+            return result
+
+        except Exception:
+            _gepa_call_log["rest_error"] = _gepa_call_log.get("rest_error", 0) + 1
             # Re-raise so GEPA sees the real error instead of a silent zero score.
-            # GEPA's adapter already handles exceptions from predict_fn.
             raise
-        finally:
-            try:
-                spark.catalog.dropTempView(view)
-            except Exception:
-                pass
 
 # COMMAND ----------
 
