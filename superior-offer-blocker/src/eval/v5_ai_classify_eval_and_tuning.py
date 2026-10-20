@@ -42,7 +42,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -q -U "mlflow[databricks]>=3.5" "gepa>=0.0.26"
+# MAGIC %pip install -q -U "mlflow[databricks]>=3.5" "gepa>=0.0.26" litellm
 # MAGIC %restart_python
 
 # COMMAND ----------
