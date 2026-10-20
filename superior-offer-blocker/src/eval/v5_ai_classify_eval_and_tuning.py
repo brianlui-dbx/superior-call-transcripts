@@ -1264,6 +1264,24 @@ if RUN_GEPA:
         opt_hash = config_to_hash(opt_config)
         classify_and_cache(opt_config, opt_hash)
 
+        # --- Update PROMPT_VERSIONS with GEPA's winning prompt versions ----------------
+        # GEPA's optimize_prompts() registers new versions of each prompt it
+        # optimises. gepa_result.optimized_prompts contains those winning
+        # PromptVersion objects, already in the registry.  We must update
+        # PROMPT_VERSIONS so that Section 13's promotion loop promotes the
+        # GEPA-optimised versions (not the stale v1 from Section 1).
+        if GEPA_PHASE == "descriptions":
+            PROMPT_VERSIONS["descriptions"] = gepa_result.optimized_prompts[0]
+            print(f"  ✓ PROMPT_VERSIONS['descriptions'] → v{gepa_result.optimized_prompts[0].version}")
+        elif GEPA_PHASE == "instructions":
+            PROMPT_VERSIONS["instructions"] = gepa_result.optimized_prompts[0]
+            print(f"  ✓ PROMPT_VERSIONS['instructions'] → v{gepa_result.optimized_prompts[0].version}")
+        else:  # joint
+            PROMPT_VERSIONS["descriptions"] = gepa_result.optimized_prompts[0]
+            PROMPT_VERSIONS["instructions"] = gepa_result.optimized_prompts[1]
+            print(f"  ✓ PROMPT_VERSIONS['descriptions'] → v{gepa_result.optimized_prompts[0].version}")
+            print(f"  ✓ PROMPT_VERSIONS['instructions'] → v{gepa_result.optimized_prompts[1].version}")
+
         # --- Re-register the bundle prompt with the optimized config ------------------
         # GEPA optimizes descriptions/instructions individually, but the bundle
         # is the single artifact downstream consumers load. Keep it in sync.
