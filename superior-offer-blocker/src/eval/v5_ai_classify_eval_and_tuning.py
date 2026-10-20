@@ -1264,6 +1264,20 @@ if RUN_GEPA:
         opt_hash = config_to_hash(opt_config)
         classify_and_cache(opt_config, opt_hash)
 
+        # --- Re-register the bundle prompt with the optimized config ------------------
+        # GEPA optimizes descriptions/instructions individually, but the bundle
+        # is the single artifact downstream consumers load. Keep it in sync.
+        try:
+            opt_bundle = register_if_changed(
+                BUNDLE_PROMPT_NAME,
+                json.dumps(opt_config, ensure_ascii=False, indent=2),
+                f"GEPA-{GEPA_PHASE} optimized (hash={opt_hash})",
+            )
+            if opt_bundle:
+                PROMPT_VERSIONS["bundle"] = opt_bundle
+        except Exception as e:
+            print(f"  ⚠ Bundle re-registration failed: {type(e).__name__}: {e}")
+
         # --- Evaluate on UNTOUCHED test split -----------------------------------------
         opt_predict_fn, _ = make_predict_fn(opt_hash)
 
