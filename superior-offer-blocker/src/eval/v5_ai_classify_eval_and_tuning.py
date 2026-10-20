@@ -42,7 +42,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -q -U "mlflow[databricks]>=3.5" "gepa>=0.0.26" litellm
+# MAGIC %pip install -q -U "mlflow[databricks]>=3.5,<4" "gepa>=0.0.26,<1" "litellm>=1.0,<2"
 # MAGIC %restart_python
 
 # COMMAND ----------
@@ -62,7 +62,7 @@ dbutils.widgets.dropdown(
 
 # COMMAND ----------
 
-import json, hashlib, uuid, threading
+import json, hashlib, uuid, re, threading
 import numpy as np
 import uuid
 import pandas as pd
@@ -954,8 +954,19 @@ if RUN_GEPA:
     @scorer
     def gepa_row_f1(outputs, expectations) -> Feedback:
         # If the predict_fn returned an error, score 0 with the error as rationale.
+        # The rationale includes schema guidance so the reflection model knows how
+        # to fix the proposal on the next iteration.
         if isinstance(outputs, dict) and outputs.get("error"):
-            return Feedback(value=0.0, rationale=f"PREDICT ERROR: {outputs['error']}")
+            return Feedback(
+                value=0.0,
+                rationale=(
+                    f"PREDICT ERROR: {outputs['error']}. "
+                    "The descriptions prompt must be a single JSON object with "
+                    "exactly 6 keys (4A–4F labels), each mapping to a non-empty "
+                    "string ≤1000 chars. No markdown, no commentary, no code "
+                    "fences — output raw JSON only."
+                ),
+            )
 
         pred = normalize_to_code_set(outputs)
         gold = normalize_to_code_set(expectations)
@@ -1003,22 +1014,54 @@ if RUN_GEPA:
     _gepa_call_log = {"total": 0, "cache_hit": 0, "desc_parse_fail": 0, "desc_key_mismatch": 0,
                       "desc_too_long": 0, "instr_too_long": 0, "rest_error": 0, "ok": 0}
 
-    def _validate_descriptions(raw_template):
-        """Parse and validate a GEPA-mutated descriptions template.
-        Returns (labels_dict, None) on success or (None, error_string) on failure."""
-        # Strip common LLM artifacts (markdown code fences)
-        text = raw_template.strip()
+    def _extract_json_from_llm_output(raw: str) -> str:
+        """Best-effort extraction of a JSON object from an LLM response.
+
+        Handles: bare JSON, markdown fences (with/without language tag),
+        prose preamble before the fence, and multiple fences (picks the
+        first one containing '{').  Returns the cleaned string for
+        json.loads(); callers should still catch JSONDecodeError.
+        """
+        text = raw.strip()
+
+        # 1. Try a fenced block: ```json ... ``` (with optional preamble)
+        fence_match = re.search(
+            r"```(?:json)?\s*\n(.*?)\n\s*```", text, re.DOTALL
+        )
+        if fence_match:
+            return fence_match.group(1).strip()
+
+        # 2. Legacy fence handling: starts/ends with ``` but regex missed
         if text.startswith("```"):
-            text = text.split("\n", 1)[-1]  # remove opening fence line
+            text = text.split("\n", 1)[-1]
         if text.endswith("```"):
             text = text.rsplit("```", 1)[0]
         text = text.strip()
+
+        # 3. Strip prose preamble before the first '{' (e.g. "Here are the
+        #    updated descriptions:\n{...}")
+        brace_idx = text.find("{")
+        if brace_idx > 0:
+            text = text[brace_idx:]
+
+        return text
+
+    def _validate_descriptions(raw_template):
+        """Parse and validate a GEPA-mutated descriptions template.
+        Returns (labels_dict, None) on success or (None, error_string) on failure."""
+        text = _extract_json_from_llm_output(raw_template)
 
         try:
             labels = json.loads(text)
         except json.JSONDecodeError as e:
             _gepa_call_log["desc_parse_fail"] += 1
-            return None, f"JSON parse error: {e}"
+            # Include diagnostic detail so the GEPA reflection model can
+            # learn what went wrong and the operator can investigate.
+            return None, (
+                f"JSON parse error: {e} | "
+                f"raw_len={len(raw_template)}, cleaned_len={len(text)}, "
+                f"cleaned_prefix={repr(text[:200])}"
+            )
 
         if not isinstance(labels, dict) or len(labels) != 6:
             _gepa_call_log["desc_parse_fail"] += 1
