@@ -669,6 +669,10 @@ def make_predict_fn(config_hash):
 
     @mlflow.trace
     def predict_fn(opportunity_id, transcript_text):
+        # Load the bundle prompt inside the traced context so MLflow links
+        # this evaluation run to the exact Prompt Registry version used.
+        if PROMPT_VERSIONS.get("bundle"):
+            mlflow.genai.load_prompt(PROMPT_VERSIONS["bundle"].uri)
         pairs = preds.get(opportunity_id, [])
         codes = [c[:2] for (c, conf) in pairs if (conf is None or conf >= CONFIDENCE_THRESHOLD)]
         confidences = [conf for (c, conf) in pairs if (conf is None or conf >= CONFIDENCE_THRESHOLD)]
@@ -721,16 +725,11 @@ for k, v in sorted((eval_result.metrics or {}).items()):
 # MAGIC ---
 # MAGIC ## Section 7 — Corpus metrics
 # MAGIC
-# MAGIC **Micro-F1** is the headline — it pools all `n × 6` label decisions. Per-label
-# MAGIC results are **integer TP/FP/FN** because "3 of 4" is honest.
+# MAGIC Micro-F1 pools all `n × 6` label decisions — the headline number.
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### 7a — Build the prediction/truth alignment frame
-
-# COMMAND ----------
-
+# --- Align predictions with ground truth and compute per-label + corpus metrics ---
 pred_pd = pd.DataFrame([
     {"opportunity_id": oid,
      "pred_set": {c[:2] for (c, conf) in pairs if (conf is None or conf >= CONFIDENCE_THRESHOLD)}}
@@ -738,13 +737,6 @@ pred_pd = pd.DataFrame([
 ])
 merged = gt_pd.merge(pred_pd, on="opportunity_id", how="left")
 merged["pred_set"] = merged["pred_set"].apply(lambda s: s if isinstance(s, set) else set())
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### 7b — Per-label TP / FP / FN
-
-# COMMAND ----------
 
 per_label, micro = [], {"tp": 0, "fp": 0, "fn": 0}
 for c in CODE_PREFIXES:
@@ -757,16 +749,7 @@ for c in CODE_PREFIXES:
                       "precision": round(p, 2), "recall": round(r, 2), "f1": round(f1, 2),
                       "note": "⚠ n too small" if n_pos <= 2 else ""})
     micro["tp"] += tp; micro["fp"] += fp; micro["fn"] += fn
-
 per_label_df = pd.DataFrame(per_label)
-display(per_label_df)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### 7c — Corpus headline metrics
-
-# COMMAND ----------
 
 micro_p, micro_r, micro_f1 = precision_recall_f1(micro["tp"], micro["fp"], micro["fn"])
 macro_codes = per_label_df[per_label_df["n_pos"] > 2]
@@ -775,27 +758,17 @@ mean_jaccard = float(merged.apply(
     lambda r: 1.0 if (not r["pred_set"] and not r["expected_set"])
     else len(r["pred_set"] & r["expected_set"]) / len(r["pred_set"] | r["expected_set"]), axis=1
 ).mean())
-
 abstain_rows = merged[merged["expected_set"].apply(len) == 0]
 abstain_acc = float((abstain_rows["pred_set"].apply(len) == 0).mean()) if len(abstain_rows) else float("nan")
 
-excluded = set(per_label_df[per_label_df["n_pos"] <= 2]["code"])
-excl_note = f" [excl {sorted(excluded)} n≤2]" if excluded else ""
-
 print("================  HEADLINE  ================")
-print(f"  Micro-F1 (headline) : {micro_f1:.2f}   [{micro['tp']}TP {micro['fp']}FP {micro['fn']}FN / {pooled} decisions]")
-print(f"  Mean Jaccard        : {mean_jaccard:.2f}")
-print(f"  Abstain accuracy    : {abstain_acc:.2f}")
-print(f"  Macro-F1 (⚠ noisy)  : {macro_f1:.2f}{excl_note}")
-print(f"  NOISE: 1 row ≈ ~{len(CODE_PREFIXES)/pooled:.0%} micro-F1 swing.")
+print(f"  Micro-F1 : {micro_f1:.2f}  [{micro['tp']}TP {micro['fp']}FP {micro['fn']}FN / {pooled} decisions]")
+print(f"  Jaccard  : {mean_jaccard:.2f}  |  Abstain acc: {abstain_acc:.2f}  |  Macro-F1: {macro_f1:.2f}")
+display(per_label_df)
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### 7d — Log corpus metrics to the same run
-
-# COMMAND ----------
-
+# --- Log corpus metrics to the baseline run ---
 with mlflow.start_run(run_id=RUN_ID):
     mlflow.log_metrics({
         "micro_f1": micro_f1, "micro_precision": micro_p, "micro_recall": micro_r,
@@ -817,7 +790,6 @@ _rat_pd = spark.sql(f"""
 """).toPandas()
 err = merged.merge(_rat_pd, on="opportunity_id", how="left")
 
-
 def _bucket(row):
     g, p = row["expected_set"], row["pred_set"]
     if g == p: return "correct"
@@ -827,17 +799,12 @@ def _bucket(row):
     if p - g: return "D. EXTRA code"
     return "E. MISSED one of several"
 
-
 err["bucket"] = err.apply(_bucket, axis=1)
 print("Error distribution:")
 print(err["bucket"].value_counts().to_string())
-
-# COMMAND ----------
-
-mistakes = err[err["bucket"] != "correct"][
+display(err[err["bucket"] != "correct"][
     ["opportunity_id", "bucket", "expected_codes", "pred_codes", "pred_confidences", "pred_rationales"]
-]
-display(mistakes)
+])
 
 # COMMAND ----------
 
@@ -879,14 +846,11 @@ with mlflow.start_run(run_id=RUN_ID):
 
 # MAGIC %md
 # MAGIC ---
-# MAGIC ## Section 10 — Decision guide + confidence threshold sweep
+# MAGIC ## Section 10 — Confidence threshold sweep (diagnostic)
 # MAGIC
-# MAGIC | Error signature | Lever |
-# MAGIC |---|---|
-# MAGIC | **C: Substitution** | Edit **DESCRIPTIONS** contrastively, in pairs |
-# MAGIC | **A: Empty-class FP** | Edit **INSTRUCTIONS** (raise evidence bar) |
-# MAGIC | **B/E: Misses** | Edit **INSTRUCTIONS** or lower threshold |
-# MAGIC | **Systematic** | **Threshold** sweep first — it's free |
+# MAGIC Sweeps a range of confidence thresholds to see how micro-F1 and abstain
+# MAGIC accuracy trade off. Use this *after* GEPA optimization to fine-tune the
+# MAGIC operating point.
 
 # COMMAND ----------
 
